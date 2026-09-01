@@ -151,6 +151,19 @@ function stageRequiredMinutes(standardHours, presentStaff, allowancePercent) {
   const inflated = (standardHours * 60) / (1 - (allowancePercent || 0) / 100);
   return inflated / presentStaff;
 }
+// İki saat arasında (mola/ara dönemleri hariç) fiilen ne kadar çalışılabilir dakika olduğunu hesaplar
+function workMinutesBetween(startMin, endMin, blocks) {
+  blocks = blocks || ALL_BLOCKS;
+  if (startMin == null || endMin == null || endMin <= startMin) return 0;
+  let total = 0;
+  blocks.forEach((block) => {
+    const bStart = timeToMin(block.start), bEnd = timeToMin(block.end);
+    const segStart = Math.max(bStart, startMin);
+    const segEnd = Math.min(bEnd, endMin);
+    if (segEnd > segStart) total += segEnd - segStart;
+  });
+  return total;
+}
 
 function getMonday(d) {
   const date = new Date(d);
@@ -345,12 +358,26 @@ function App() {
   }
   function updateEntry(dKey, stationId, field, value) {
     const key = `${dKey}|${stationId}`;
+    const current = data.entries[key] || {};
+    const merged = { ...current, [field]: value };
+    const patch = { [field]: value };
+    if (merged.actualEndTime) {
+      const startMin = timeToMin(merged.startTime) ?? SHIFT_START_MIN;
+      const endMin = timeToMin(merged.actualEndTime);
+      const totalStaff = parseFloat(merged.totalStaff) || 0;
+      const absentStaff = parseFloat(merged.absentStaff) || 0;
+      const present = Math.max(totalStaff - absentStaff, 0);
+      if (endMin != null && present > 0) {
+        const workMin = workMinutesBetween(startMin, endMin, ALL_BLOCKS);
+        patch.actual = Math.round(((workMin * present) / 60) * 100) / 100;
+      }
+    }
     setData((prev) => {
       const entries = { ...prev.entries };
-      entries[key] = { ...(entries[key] || {}), [field]: value };
+      entries[key] = { ...(entries[key] || {}), ...patch };
       return { ...prev, entries };
     });
-    scheduleWrite('entries', key, { [field]: value });
+    scheduleWrite('entries', key, patch);
   }
   function hasDataForDate(d) {
     const k = dateKey(d);
@@ -481,7 +508,7 @@ function App() {
   }
 
   function exportCSV() {
-    const header = ['Tarih', 'İstasyon', 'Grup', 'Standart (a-s)', 'Gerçekleşen (a-s)', 'Mevcut Personel', 'Devamsız', 'Kayıp (a-s)', 'Hedef (adet)', 'Üretilen (adet)', 'Verim (%)'];
+    const header = ['Tarih', 'İstasyon', 'Grup', 'Başlangıç', 'Gerçek Bitiş', 'Standart (a-s)', 'Gerçekleşen (a-s)', 'Mevcut Personel', 'Devamsız', 'Kayıp (a-s)', 'Hedef (adet)', 'Üretilen (adet)', 'Verim (%)'];
     const lines = [header.join(';')];
     weekDates.forEach((d) => {
       const dKey = dateKey(d);
@@ -490,7 +517,7 @@ function App() {
         if (!hasAnyInput(e)) return;
         const eff = calcEff(e, s.standardHours);
         const abs = parseFloat(e.absentStaff) || 0;
-        lines.push([dKey, s.name, GROUP_LABEL[s.group], s.standardHours ?? '', e.actual || '', e.totalStaff || '', e.absentStaff || '', (abs * shiftHours).toFixed(1), e.target || '', e.produced || '', eff === null ? '' : Math.round(eff)].join(';'));
+        lines.push([dKey, s.name, GROUP_LABEL[s.group], e.startTime || '', e.actualEndTime || '', s.standardHours ?? '', e.actual || '', e.totalStaff || '', e.absentStaff || '', (abs * shiftHours).toFixed(1), e.target || '', e.produced || '', eff === null ? '' : Math.round(eff)].join(';'));
       });
     });
     const csv = '\uFEFF' + lines.join('\n');
@@ -660,23 +687,32 @@ function App() {
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
                     <div>
-                      <div style={{ fontSize: 10, color: C.dim, marginBottom: 4, textAlign: 'center' }}>Gerçekleşen adam-saat</div>
-                      <input type="number" min="0" step="0.5" className="num-input" placeholder="0" value={entry.actual || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'actual', e.target.value)} />
-                    </div>
-                    <div>
                       <div style={{ fontSize: 10, color: C.dim, marginBottom: 4, textAlign: 'center' }}>Mevcut personel</div>
                       <input type="number" min="0" step="1" className="num-input" placeholder="0" value={entry.totalStaff || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'totalStaff', e.target.value)} />
                     </div>
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
                     <div>
                       <div style={{ fontSize: 10, color: C.dim, marginBottom: 4, textAlign: 'center' }}>Devamsız personel</div>
                       <input type="number" min="0" step="1" className="num-input" placeholder="0" value={entry.absentStaff || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'absentStaff', e.target.value)} />
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: absentStaff > 0 ? C.bad : C.dim, textAlign: 'center', fontFamily: "'JetBrains Mono', monospace" }}>
-                      {absentStaff > 0 ? `Kayıp: ${lostHours.toFixed(1)} a-s` : 'Kayıp yok'}
+                  </div>
+                  {absentStaff > 0 && (
+                    <div style={{ fontSize: 10.5, color: C.bad, marginBottom: 8, fontFamily: "'JetBrains Mono', monospace" }}>Devamsızlık kaybı: {lostHours.toFixed(1)} a-s</div>
+                  )}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                    <div>
+                      <div style={{ fontSize: 10, color: C.dim, marginBottom: 4, textAlign: 'center' }}>Gerçek bitiş saati</div>
+                      <input type="time" className="num-input" value={entry.actualEndTime || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'actualEndTime', e.target.value)} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10, color: C.dim, marginBottom: 4, textAlign: 'center' }}>Gerçekleşen adam-saat</div>
+                      <div style={{ background: C.page, border: `1px solid ${C.border}`, borderRadius: 3, padding: '8px 8px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 14, color: C.paper, fontWeight: 700 }}>
+                        {entry.actual !== undefined && entry.actual !== '' ? `${parseFloat(entry.actual).toFixed(1)} a-s` : '—'}
+                      </div>
                     </div>
                   </div>
+                  {entry.actualEndTime && presentStaff === 0 && (
+                    <div style={{ fontSize: 10.5, color: C.copper, marginBottom: 8, fontFamily: "'JetBrains Mono', monospace" }}>⚠ Adam-saat hesaplanamıyor — önce mevcut/devamsız personeli gir</div>
+                  )}
 
                   <DimensionBar eff={eff} />
 
