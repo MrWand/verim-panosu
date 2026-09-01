@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>İstasyon Verim Panosu</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background-color: #05080D;
+    background-image:
+      radial-gradient(circle at 12% 8%, rgba(0,229,255,0.14), transparent 42%),
+      radial-gradient(circle at 88% 92%, rgba(185,140,255,0.10), transparent 46%),
+      linear-gradient(rgba(0,229,255,0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,255,0.06) 1px, transparent 1px);
+    background-size: auto, auto, 32px 32px, 32px 32px;
+  }
+  .num-input {
+    width: 100%;
+    background: rgba(3,8,14,0.7);
+    border: 1px solid rgba(0,229,255,0.28);
+    border-radius: 3px;
+    color: #E8F6FF;
+    padding: 8px 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    text-align: center;
+  }
+  .num-input:focus { outline: none; border-color: #00E5FF; box-shadow: 0 0 10px rgba(0,229,255,0.35); }
+  .num-input::placeholder { color: #3F5A6D; }
+  .num-input-sm { padding: 6px 6px; font-size: 13px; }
+  input[type=number]::-webkit-inner-spin-button,
+  input[type=number]::-webkit-outer-spin-button { opacity: 0.5; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyDXK2-qdEITwA1ud3bWQzbAv-MpsOvzZYM",
+    authDomain: "istasyon-verim-1178c.firebaseapp.com",
+    projectId: "istasyon-verim-1178c",
+    storageBucket: "istasyon-verim-1178c.firebasestorage.app",
+    messagingSenderId: "332044519273",
+    appId: "1:332044519273:web:b530b71d7a9583e4a35ff8"
+  };
+  firebase.initializeApp(firebaseConfig);
+  window.__db = firebase.firestore();
+</script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useMemo } = React;
+const db = window.__db;
+
+const DAY_NAMES = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
+const MONTHS = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+const STORAGE_KEY = 'rail_verim_data_v2';
+
+const C = {
+  page: '#05080D',
+  panel: 'rgba(14,24,36,0.82)',
+  panelAlt: 'rgba(8,15,24,0.88)',
+  border: 'rgba(0,229,255,0.28)',
+  line: '#4FC7E0',
+  paper: '#E8F6FF',
+  dim: '#6C8AA0',
+  copper: '#FFA640',
+  good: '#39FF9E',
+  bad: '#FF5468',
+  groupA: '#7DE0FF',
+  groupB: '#B98CFF',
+};
+const GROUP_LABEL = { taslama: 'Taşlama', kaynakmontaj: 'Kaynak-Montaj' };
+const GROUP_COLOR = { taslama: C.groupA, kaynakmontaj: C.groupB };
+
+const DEFAULT_STATIONS = [
+  { name: 'İlk Temizlik', group: 'taslama', standardHours: 38 },
+  { name: 'Sıfırlama', group: 'taslama', standardHours: 12 },
+  { name: 'Final Temizlik - Hazırlık', group: 'taslama', standardHours: null },
+  { name: 'Final Temizlik - Kırmızı', group: 'taslama', standardHours: null },
+  { name: 'Final Temizlik - Beyaz', group: 'taslama', standardHours: null },
+  { name: 'Final Temizlik - Şef Kontrolü', group: 'taslama', standardHours: null },
+  { name: 'Döner Kaynak İstasyonu', group: 'kaynakmontaj', standardHours: 70 },
+  { name: 'Aksesuar Montaj', group: 'kaynakmontaj', standardHours: 28 },
+  { name: 'Aksesuar Kaynak', group: 'kaynakmontaj', standardHours: 28 },
+  { name: 'Şasi Toplama', group: 'kaynakmontaj', standardHours: 20 },
+  { name: 'Yarasa', group: 'kaynakmontaj', standardHours: 5 },
+  { name: 'Kiriş', group: 'kaynakmontaj', standardHours: 7 },
+  { name: 'Pantolon Toplama', group: 'kaynakmontaj', standardHours: null },
+  { name: 'Travers Toplama', group: 'kaynakmontaj', standardHours: null },
+  { name: 'Pantolon Kaynak', group: 'kaynakmontaj', standardHours: null },
+  { name: 'Travers Kaynak', group: 'kaynakmontaj', standardHours: null },
+  { name: 'Kafa Toplama', group: 'kaynakmontaj', standardHours: null },
+  { name: 'Sac Montaj', group: 'kaynakmontaj', standardHours: null },
+  { name: 'Menteşe Montaj', group: 'kaynakmontaj', standardHours: null },
+  { name: 'Menteşe Kaynak', group: 'kaynakmontaj', standardHours: null },
+];
+
+const FINAL_STAGES = ['Final Temizlik - Hazırlık', 'Final Temizlik - Kırmızı', 'Final Temizlik - Beyaz', 'Final Temizlik - Şef Kontrolü'];
+const SHIFT_BLOCKS = [
+  { start: '06:55', end: '09:30' },
+  { start: '09:45', end: '12:00' },
+  { start: '12:50', end: '15:15' },
+  { start: '15:30', end: '16:55' },
+];
+function timeToMin(t) { if (!t) return null; const parts = t.split(':'); if (parts.length < 2) return null; const h = parseInt(parts[0], 10), m = parseInt(parts[1], 10); if (isNaN(h) || isNaN(m)) return null; return h * 60 + m; }
+function minToTime(m) { if (m == null || isNaN(m)) return '—'; m = Math.round(m); const h = Math.floor(m / 60), mm = m % 60; return `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`; }
+const SHIFT_START_MIN = timeToMin(SHIFT_BLOCKS[0].start);
+const SHIFT_END_MIN = timeToMin(SHIFT_BLOCKS[SHIFT_BLOCKS.length - 1].end);
+const NET_SHIFT_MIN = SHIFT_BLOCKS.reduce((acc, b) => acc + (timeToMin(b.end) - timeToMin(b.start)), 0);
+
+// Walk through the shift blocks (skipping breaks) starting at startMin, consuming workMinutesNeeded of actual work time.
+function estimateFinishTime(startMin, workMinutesNeeded) {
+  if (startMin == null || workMinutesNeeded == null || workMinutesNeeded <= 0) return { finishMin: startMin, overflow: false };
+  let remaining = workMinutesNeeded;
+  let lastBlockEnd = SHIFT_END_MIN;
+  for (const block of SHIFT_BLOCKS) {
+    const bStart = timeToMin(block.start), bEnd = timeToMin(block.end);
+    lastBlockEnd = bEnd;
+    if (bEnd <= startMin) continue;
+    const segStart = Math.max(bStart, startMin);
+    const segAvail = bEnd - segStart;
+    if (segAvail <= 0) continue;
+    if (remaining <= segAvail) return { finishMin: segStart + remaining, overflow: false };
+    remaining -= segAvail;
+  }
+  return { finishMin: SHIFT_END_MIN + remaining, overflow: true };
+}
+function stageRequiredMinutes(standardHours, presentStaff, allowancePercent) {
+  if (standardHours == null || !presentStaff || presentStaff <= 0) return null;
+  const inflated = (standardHours * 60) / (1 - (allowancePercent || 0) / 100);
+  return inflated / presentStaff;
+}
+
+function getMonday(d) {
+  const date = new Date(d);
+  const day = date.getDay();
+  const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+  date.setDate(diff);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+function addDays(d, n) { const nd = new Date(d); nd.setDate(nd.getDate() + n); return nd; }
+function dateKey(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+function formatRange(monday) {
+  const sunday = addDays(monday, 6);
+  if (monday.getMonth() === sunday.getMonth()) {
+    return `${monday.getDate()}–${sunday.getDate()} ${MONTHS[monday.getMonth()]} ${monday.getFullYear()}`;
+  }
+  return `${monday.getDate()} ${MONTHS[monday.getMonth()]} – ${sunday.getDate()} ${MONTHS[sunday.getMonth()]} ${sunday.getFullYear()}`;
+}
+function calcEff(entry, standard) {
+  if (!entry) return null;
+  const actual = parseFloat(entry.actual);
+  const target = parseFloat(entry.target);
+  const produced = parseFloat(entry.produced);
+  const vals = [];
+  if (standard != null && standard > 0 && actual > 0) vals.push(Math.min((standard / actual) * 100, 999));
+  if (target > 0 && !isNaN(produced)) vals.push(Math.min((produced / target) * 100, 999));
+  if (vals.length === 0) return null;
+  return vals.reduce((a, b) => a + b, 0) / vals.length;
+}
+function effColor(eff) {
+  if (eff === null) return C.dim;
+  if (eff >= 90) return C.good;
+  if (eff >= 70) return C.copper;
+  return C.bad;
+}
+function hasAnyInput(e) {
+  return !!(e && (e.actual || e.totalStaff || e.absentStaff || e.target || e.produced));
+}
+
+function DimensionBar({ eff, height = 18 }) {
+  const color = effColor(eff);
+  const width = eff === null ? 0 : Math.min(eff, 100);
+  return (
+    <div style={{ position: 'relative', height, display: 'flex', alignItems: 'center' }}>
+      <div style={{ position: 'absolute', left: 0, right: 0, top: '50%', height: 1, background: C.border }} />
+      <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 1, background: C.line }} />
+      <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 1, background: C.line }} />
+      <div style={{ position: 'absolute', left: '50%', top: 3, bottom: 3, width: 1, background: 'rgba(0,229,255,0.35)' }} />
+      <div style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', height: 5, width: `${width}%`, background: color, boxShadow: `0 0 10px ${color}`, transition: 'width 0.4s ease' }} />
+    </div>
+  );
+}
+function TitleCell({ label, children, minWidth }) {
+  return (
+    <div style={{ borderRight: `1px solid ${C.border}`, padding: '10px 16px', minWidth, flex: minWidth ? '0 0 auto' : 1 }}>
+      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: 1.5, color: C.line, textTransform: 'uppercase', marginBottom: 4 }}>{label}</div>
+      {children}
+    </div>
+  );
+}
+function GroupTag({ group }) {
+  return (
+    <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: GROUP_COLOR[group], border: `1px solid ${GROUP_COLOR[group]}`, borderRadius: 3, padding: '1px 6px', textTransform: 'uppercase', letterSpacing: 0.5, boxShadow: `0 0 8px ${GROUP_COLOR[group]}33` }}>
+      {GROUP_LABEL[group]}
+    </span>
+  );
+}
+
+function migrateStations(existing) {
+  // Eski tek "Final Temizlik" istasyonu 4 alt istasyona bölündü; varsa kaldır (verileri kaybetmeden, sadece istasyon listesinden çıkar)
+  return existing.filter((s) => s.name.trim().toLowerCase() !== 'final temizlik');
+}
+function seedStations(existing) {
+  const existingNames = new Set(existing.map((s) => s.name.trim().toLowerCase()));
+  const toAdd = DEFAULT_STATIONS
+    .filter((d) => !existingNames.has(d.name.trim().toLowerCase()))
+    .map((d, i) => ({ id: Date.now().toString(36) + '_' + i, name: d.name, group: d.group, standardHours: d.standardHours }));
+  return [...existing, ...toAdd];
+}
+
+function App() {
+  const [data, setData] = useState({ stations: [], entries: {}, settings: { allowancePercent: 10 } });
+  const [connected, setConnected] = useState(true);
+  const [weekStart, setWeekStart] = useState(() => getMonday(new Date()));
+  const [dayIndex, setDayIndex] = useState(() => { const d = new Date().getDay(); return d === 0 ? 6 : d - 1; });
+  const [newStation, setNewStation] = useState('');
+  const [newGroup, setNewGroup] = useState('kaynakmontaj');
+  const [newStandard, setNewStandard] = useState('');
+  const pendingWrites = useRef({});
+
+  useEffect(() => {
+    const onOnline = () => setConnected(true);
+    const onOffline = () => setConnected(false);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    setConnected(navigator.onLine);
+
+    let seededEmpty = false;
+
+    const unsubStations = db.collection('stations').onSnapshot((snap) => {
+      let stations = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const oldFinal = stations.find((s) => s.name && s.name.trim().toLowerCase() === 'final temizlik');
+      if (oldFinal) {
+        db.collection('stations').doc(oldFinal.id).delete().catch(() => {});
+        stations = stations.filter((s) => s.id !== oldFinal.id);
+      }
+      if (!seededEmpty && stations.length === 0) {
+        seededEmpty = true;
+        const batch = db.batch();
+        DEFAULT_STATIONS.forEach((d, i) => {
+          const id = 'seed_' + Date.now().toString(36) + '_' + i;
+          batch.set(db.collection('stations').doc(id), { name: d.name, group: d.group, standardHours: d.standardHours });
+        });
+        batch.commit().catch((e) => console.error('Tohumlama hatası', e));
+      } else if (stations.length > 0) {
+        const existingNames = new Set(stations.map((s) => s.name.trim().toLowerCase()));
+        DEFAULT_STATIONS.filter((d) => !existingNames.has(d.name.trim().toLowerCase())).forEach((d, i) => {
+          const id = 'seed_' + Date.now().toString(36) + '_' + i;
+          db.collection('stations').doc(id).set({ name: d.name, group: d.group, standardHours: d.standardHours }).catch(() => {});
+        });
+      }
+      setData((prev) => ({ ...prev, stations }));
+    }, (err) => { console.error('İstasyon senkron hatası', err); setConnected(false); });
+
+    const unsubEntries = db.collection('entries').onSnapshot((snap) => {
+      const entries = {};
+      snap.docs.forEach((d) => { entries[d.id] = d.data(); });
+      setData((prev) => ({ ...prev, entries }));
+    }, (err) => { console.error('Giriş senkron hatası', err); setConnected(false); });
+
+    const unsubSettings = db.collection('settings').doc('global').onSnapshot((doc) => {
+      const settings = doc.exists ? doc.data() : { allowancePercent: 10 };
+      if (!doc.exists) db.collection('settings').doc('global').set({ allowancePercent: 10 }).catch(() => {});
+      setData((prev) => ({ ...prev, settings }));
+    }, (err) => { console.error('Ayar senkron hatası', err); setConnected(false); });
+
+    return () => { window.removeEventListener('online', onOnline); window.removeEventListener('offline', onOffline); unsubStations(); unsubEntries(); unsubSettings(); };
+  }, []);
+
+  // Bir belgeye yapılan art arda değişiklikleri kısa süre biriktirip tek yazma isteğinde birleştirir
+  function scheduleWrite(collectionName, docId, patch) {
+    const key = `${collectionName}/${docId}`;
+    const existing = pendingWrites.current[key] || { data: {} };
+    existing.data = { ...existing.data, ...patch };
+    if (existing.timer) clearTimeout(existing.timer);
+    existing.timer = setTimeout(() => {
+      const toWrite = pendingWrites.current[key]?.data;
+      delete pendingWrites.current[key];
+      db.collection(collectionName).doc(docId).set(toWrite, { merge: true }).catch((e) => console.error('Yazma hatası', e));
+    }, 450);
+    pendingWrites.current[key] = existing;
+  }
+
+  const shiftHours = NET_SHIFT_MIN / 60;
+  const allowancePercent = parseFloat(data.settings?.allowancePercent) || 0;
+  const weekDates = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
+  const selectedDate = weekDates[dayIndex];
+  const selectedKey = dateKey(selectedDate);
+
+  function updateSettings(field, value) {
+    setData((prev) => ({ ...prev, settings: { ...prev.settings, [field]: value } }));
+    scheduleWrite('settings', 'global', { [field]: value });
+  }
+  function addStation() {
+    const name = newStation.trim();
+    if (!name) return;
+    const id = 'st_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const st = { id, name, group: newGroup, standardHours: newStandard === '' ? null : parseFloat(newStandard) };
+    setData((prev) => ({ ...prev, stations: [...prev.stations, st] }));
+    db.collection('stations').doc(id).set({ name: st.name, group: st.group, standardHours: st.standardHours }).catch((e) => console.error('Yazma hatası', e));
+    setNewStation(''); setNewStandard('');
+  }
+  function removeStation(id) {
+    setData((prev) => {
+      const entries = { ...prev.entries };
+      Object.keys(entries).forEach((k) => { if (k.endsWith('|' + id)) delete entries[k]; });
+      return { stations: prev.stations.filter((s) => s.id !== id), entries, settings: prev.settings };
+    });
+    db.collection('stations').doc(id).delete().catch((e) => console.error('Silme hatası', e));
+    Object.keys(data.entries).forEach((k) => {
+      if (k.endsWith('|' + id)) db.collection('entries').doc(k).delete().catch(() => {});
+    });
+  }
+  function updateStationField(id, field, value) {
+    setData((prev) => ({ ...prev, stations: prev.stations.map((s) => s.id === id ? { ...s, [field]: value } : s) }));
+    scheduleWrite('stations', id, { [field]: value });
+  }
+  function updateEntry(dKey, stationId, field, value) {
+    const key = `${dKey}|${stationId}`;
+    setData((prev) => {
+      const entries = { ...prev.entries };
+      entries[key] = { ...(entries[key] || {}), [field]: value };
+      return { ...prev, entries };
+    });
+    scheduleWrite('entries', key, { [field]: value });
+  }
+  function hasDataForDate(d) {
+    const k = dateKey(d);
+    return data.stations.some((s) => hasAnyInput(data.entries[`${k}|${s.id}`]));
+  }
+
+  const finalCascade = useMemo(() => {
+    let cursor = null;
+    const results = [];
+    FINAL_STAGES.forEach((name) => {
+      const st = data.stations.find((s) => s.name === name);
+      if (!st) { results.push(null); return; }
+      const entry = data.entries[`${selectedKey}|${st.id}`] || {};
+      const explicitStart = timeToMin(entry.startTime);
+      const startMin = explicitStart != null ? explicitStart : (cursor != null ? cursor : SHIFT_START_MIN);
+      const totalStaff = parseFloat(entry.totalStaff) || 0;
+      const absentStaff = parseFloat(entry.absentStaff) || 0;
+      const present = Math.max(totalStaff - absentStaff, 0);
+      const neededMin = stageRequiredMinutes(st.standardHours, present, allowancePercent);
+      let finishMin = null, overflow = false;
+      if (neededMin != null) { const r = estimateFinishTime(startMin, neededMin); finishMin = r.finishMin; overflow = r.overflow; }
+      results.push({ station: st, startMin, neededMin, finishMin, overflow, present, autoStart: explicitStart == null });
+      cursor = finishMin != null ? finishMin : startMin;
+    });
+    return results;
+  }, [data, selectedKey, allowancePercent]);
+
+  const stationSummaries = useMemo(() => {
+    return data.stations.map((s) => {
+      let sum = 0, count = 0, totalActual = 0, totalStandardExpected = 0, totalAbsent = 0, totalLost = 0, presentSum = 0, presentDays = 0, totalCapacityShortfall = 0;
+      weekDates.forEach((d) => {
+        const e = data.entries[`${dateKey(d)}|${s.id}`];
+        const eff = calcEff(e, s.standardHours);
+        if (eff !== null) { sum += eff; count += 1; }
+        if (hasAnyInput(e)) {
+          const act = parseFloat(e.actual) || 0;
+          const tot = parseFloat(e.totalStaff) || 0;
+          const abs = parseFloat(e.absentStaff) || 0;
+          totalActual += act;
+          if (s.standardHours != null) totalStandardExpected += s.standardHours;
+          totalAbsent += abs;
+          totalLost += abs * shiftHours;
+          if (tot > 0) {
+            const present = Math.max(tot - abs, 0);
+            presentSum += present; presentDays += 1;
+            if (s.standardHours != null) {
+              const shortfall = s.standardHours - present * shiftHours;
+              if (shortfall > 0) totalCapacityShortfall += shortfall;
+            }
+          }
+        }
+      });
+      const lossTotal = s.standardHours != null ? totalActual - totalStandardExpected : null;
+      const lossPercentAvg = (lossTotal != null && totalStandardExpected > 0) ? (lossTotal / totalStandardExpected) * 100 : null;
+      const avgPresent = presentDays > 0 ? presentSum / presentDays : 0;
+      return { ...s, avg: count > 0 ? sum / count : null, totalActual, totalStandardExpected, lossTotal, lossPercentAvg, totalCapacityShortfall, totalAbsent, totalLost, avgPresent, days: count };
+    }).sort((a, b) => { if (a.avg === null) return 1; if (b.avg === null) return -1; return b.avg - a.avg; });
+  }, [data, weekDates, shiftHours]);
+
+  const weekAvg = useMemo(() => {
+    const vals = stationSummaries.filter((s) => s.avg !== null).map((s) => s.avg);
+    if (vals.length === 0) return null;
+    return vals.reduce((a, b) => a + b, 0) / vals.length;
+  }, [stationSummaries]);
+
+  const groupTotals = useMemo(() => {
+    const g = { taslama: { actual: 0, standard: 0 }, kaynakmontaj: { actual: 0, standard: 0 } };
+    stationSummaries.forEach((s) => { g[s.group].actual += s.totalActual; g[s.group].standard += s.totalStandardExpected; });
+    return g;
+  }, [stationSummaries]);
+
+  const overtimeStations = useMemo(() => stationSummaries.filter((s) => s.totalCapacityShortfall > 0.05).sort((a, b) => b.totalCapacityShortfall - a.totalCapacityShortfall), [stationSummaries]);
+  const absenteeismTotal = useMemo(() => stationSummaries.reduce((acc, s) => ({ persons: acc.persons + s.totalAbsent, hours: acc.hours + s.totalLost }), { persons: 0, hours: 0 }), [stationSummaries]);
+  const lossTotal = useMemo(() => stationSummaries.reduce((acc, s) => acc + (s.lossTotal != null && s.lossTotal > 0 ? s.lossTotal : 0), 0), [stationSummaries]);
+
+  function printReport() {
+    const rangeLabel = formatRange(weekStart);
+    const rows = stationSummaries.map((s) => `
+      <tr>
+        <td>${s.name} <span style="color:#888;font-size:11px">(${GROUP_LABEL[s.group]})</span></td>
+        <td style="text-align:right">${s.standardHours != null ? s.standardHours.toFixed(1) : '—'}</td>
+        <td style="text-align:right">${s.totalActual.toFixed(1)}</td>
+        <td style="text-align:right;font-weight:700;color:${s.lossTotal != null && s.lossTotal > 0.05 ? '#b23' : '#1a7a5e'}">${s.lossTotal == null ? '—' : (s.lossTotal > 0.05 ? '+' + s.lossTotal.toFixed(1) + ' (kayıp)' : (s.lossTotal < -0.05 ? (-s.lossTotal).toFixed(1) + ' (tasarruf)' : '0.0'))}</td>
+        <td style="text-align:right">${s.totalAbsent > 0 ? s.totalAbsent + ' kişi / ' + s.totalLost.toFixed(1) + ' a-s' : '—'}</td>
+        <td style="text-align:right;font-weight:700">${s.avg === null ? '—' : Math.round(s.avg) + '%'}</td>
+      </tr>`).join('');
+    const overtimeRows = overtimeStations.map((s) => `<li>${s.name}: ≈${s.totalCapacityShortfall.toFixed(1)} adam-saat kapasite açığı (devamsızlık nedeniyle)${s.avgPresent > 0 ? ` · ≈${(s.totalCapacityShortfall / s.avgPresent).toFixed(1)} saat/kişi ek mesai` : ''}</li>`).join('');
+    const allowanceBreaches = stationSummaries.filter((s) => s.lossPercentAvg != null && s.lossPercentAvg > allowancePercent);
+    const allowanceRows = allowanceBreaches.map((s) => `<li>${s.name}: kayıp oranı %${s.lossPercentAvg.toFixed(0)} (izin verilen %${allowancePercent})</li>`).join('');
+    const html = `<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8" />
+      <title>Haftalık Verim Raporu - ${rangeLabel}</title>
+      <style>
+        body { font-family: Arial, Helvetica, sans-serif; color: #111; padding: 32px; }
+        h1 { font-size: 20px; margin: 0 0 2px; }
+        h2 { font-size: 13px; font-weight: normal; color: #555; margin: 0 0 20px; }
+        h3 { font-size: 14px; margin: 24px 0 8px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th, td { border: 1px solid #ccc; padding: 7px 9px; }
+        th { background: #f0f0f0; text-align: left; }
+        .grid2 { display: flex; gap: 20px; margin-top: 16px; }
+        .box { border: 1px solid #ccc; padding: 12px 16px; flex: 1; }
+        .box b { font-size: 20px; display:block; margin-top:4px; }
+        ul { font-size: 13px; padding-left: 18px; }
+        @media print { body { padding: 12px; } }
+      </style></head><body>
+      <h1>Epsilon Solentek Raylı Sistemler A.Ş. — Haftalık İstasyon Verim Raporu</h1>
+      <h2>${rangeLabel} · Net mesai: ${shiftHours.toFixed(2)} saat/kişi · Mola payı: %${allowancePercent}</h2>
+      <table>
+        <thead><tr><th>İstasyon</th><th style="text-align:right">Standart (a-s)</th><th style="text-align:right">Gerçekleşen (a-s)</th><th style="text-align:right">Kayıp/Tasarruf (a-s)</th><th style="text-align:right">Devamsızlık</th><th style="text-align:right">Verim</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="6">Bu hafta için veri girilmemiş.</td></tr>'}</tbody>
+      </table>
+      <div class="grid2">
+        <div class="box">Taşlama toplamı (gerçekleşen)<b>${groupTotals.taslama.actual.toFixed(1)} a-s</b></div>
+        <div class="box">Kaynak-Montaj toplamı (gerçekleşen)<b>${groupTotals.kaynakmontaj.actual.toFixed(1)} a-s</b></div>
+        <div class="box">Haftalık ortalama verim<b>${weekAvg === null ? '—' : Math.round(weekAvg) + '%'}</b></div>
+      </div>
+      <h3>Devamsızlık etkisi</h3>
+      <p style="font-size:13px">Toplam ${absenteeismTotal.persons} kişi-gün devamsızlık, ${absenteeismTotal.hours.toFixed(1)} adam-saat kayıp.</p>
+      <h3>Ek mesai gerekebilecek istasyonlar</h3>
+      ${overtimeStations.length > 0 ? `<ul>${overtimeRows}</ul>` : '<p style="font-size:13px">Bu hafta ek mesai gereken istasyon yok.</p>'}
+      <h3>Mola payı aşımı (%${allowancePercent} sınırının üzerinde kayıp)</h3>
+      ${allowanceBreaches.length > 0 ? `<ul>${allowanceRows}</ul>` : `<p style="font-size:13px">Bu hafta %${allowancePercent} mola payını aşan istasyon yok.</p>`}
+      </body></html>`;
+    const win = window.open('', '_blank');
+    if (!win) { alert('Rapor penceresi açılamadı. Tarayıcının açılır pencere engelleyicisini kontrol et.'); return; }
+    win.document.open(); win.document.write(html); win.document.close();
+    setTimeout(() => win.print(), 300);
+  }
+
+  function exportCSV() {
+    const header = ['Tarih', 'İstasyon', 'Grup', 'Standart (a-s)', 'Gerçekleşen (a-s)', 'Mevcut Personel', 'Devamsız', 'Kayıp (a-s)', 'Hedef (adet)', 'Üretilen (adet)', 'Verim (%)'];
+    const lines = [header.join(';')];
+    weekDates.forEach((d) => {
+      const dKey = dateKey(d);
+      data.stations.forEach((s) => {
+        const e = data.entries[`${dKey}|${s.id}`];
+        if (!hasAnyInput(e)) return;
+        const eff = calcEff(e, s.standardHours);
+        const abs = parseFloat(e.absentStaff) || 0;
+        lines.push([dKey, s.name, GROUP_LABEL[s.group], s.standardHours ?? '', e.actual || '', e.totalStaff || '', e.absentStaff || '', (abs * shiftHours).toFixed(1), e.target || '', e.produced || '', eff === null ? '' : Math.round(eff)].join(';'));
+      });
+    });
+    const csv = '\uFEFF' + lines.join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `istasyon-verim-${dateKey(weekStart)}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', fontFamily: "'IBM Plex Sans', sans-serif", color: C.paper, padding: '20px 16px 56px' }}>
+      <div style={{ maxWidth: 960, margin: '0 auto' }}>
+
+        {/* Title block */}
+        <div style={{ border: `1px solid ${C.border}`, background: C.panel, marginBottom: 20, display: 'flex', flexWrap: 'wrap', boxShadow: '0 0 32px rgba(0,229,255,0.10), inset 0 1px 0 rgba(255,255,255,0.04)' }}>
+          <TitleCell label="Proje" minWidth={210}>
+            <div style={{ fontFamily: "'Rajdhani', sans-serif", fontWeight: 700, fontSize: 19, letterSpacing: 0.5, color: C.paper, textShadow: '0 0 14px rgba(0,229,255,0.45)' }}>İstasyon Verim Panosu</div>
+            <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>Epsilon Solentek Raylı Sistemler</div>
+          </TitleCell>
+          <TitleCell label="Hafta" minWidth={220}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <button onClick={() => setWeekStart((w) => addDays(w, -7))} style={{ background: 'none', border: 'none', color: C.dim, cursor: 'pointer', fontSize: 18, padding: '0 4px' }} aria-label="Önceki hafta">‹</button>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 14 }}>{formatRange(weekStart)}</span>
+              <button onClick={() => setWeekStart((w) => addDays(w, 7))} style={{ background: 'none', border: 'none', color: C.dim, cursor: 'pointer', fontSize: 18, padding: '0 4px' }} aria-label="Sonraki hafta">›</button>
+            </div>
+          </TitleCell>
+          <TitleCell label="Net mesai (mola hariç)" minWidth={150}>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 14 }}>{Math.floor(NET_SHIFT_MIN / 60)}s {NET_SHIFT_MIN % 60}dk</div>
+            <div style={{ fontSize: 10, color: C.dim, marginTop: 2 }}>06:55–16:55, molalar hariç</div>
+          </TitleCell>
+          <TitleCell label="Mola payı (sigara/çay/tel.)" minWidth={140}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input type="number" step="1" min="0" max="100" className="num-input num-input-sm" style={{ width: 60 }} value={data.settings?.allowancePercent ?? 10} onChange={(e) => updateSettings('allowancePercent', e.target.value)} />
+              <span style={{ fontSize: 12, color: C.dim }}>%</span>
+            </div>
+          </TitleCell>
+          <div style={{ padding: '10px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: 1.5, color: C.line, textTransform: 'uppercase', marginBottom: 4 }}>Ort. verim</div>
+              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 28, color: C.copper, lineHeight: 1, textShadow: `0 0 16px ${C.copper}` }}>
+                {weekAvg === null ? '—' : Math.round(weekAvg)}{weekAvg !== null && <span style={{ fontSize: 15, opacity: 0.7 }}>%</span>}
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ width: 7, height: 7, borderRadius: 4, background: connected ? C.good : C.bad, boxShadow: `0 0 8px ${connected ? C.good : C.bad}` }} />
+              <span style={{ fontSize: 10, color: C.dim, fontFamily: "'JetBrains Mono', monospace" }}>{connected ? 'Ortak pano bağlı' : 'Bağlantı yok'}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Istasyon yonetimi */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, letterSpacing: 1.5, color: C.line, textTransform: 'uppercase', marginBottom: 8 }}>
+            İstasyonlar ve Standart Adam-Saat
+          </div>
+          <div style={{ background: C.panel, border: `1px solid ${C.border}`, padding: 14 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+              {data.stations.map((s) => (
+                <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: C.panelAlt, border: `1px solid ${C.border}`, padding: '6px 10px' }}>
+                  <GroupTag group={s.group} />
+                  <span style={{ flex: 1, fontSize: 13 }}>{s.name}</span>
+                  <input
+                    type="number" min="0" step="0.5" placeholder="a-s"
+                    className="num-input num-input-sm" style={{ width: 70 }}
+                    value={s.standardHours ?? ''}
+                    onChange={(e) => updateStationField(s.id, 'standardHours', e.target.value === '' ? null : parseFloat(e.target.value))}
+                  />
+                  <button onClick={() => removeStation(s.id)} style={{ background: 'none', border: 'none', color: C.dim, cursor: 'pointer', padding: 2, fontSize: 16 }} aria-label={`${s.name} istasyonunu sil`}>×</button>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <input value={newStation} onChange={(e) => setNewStation(e.target.value)} placeholder="Yeni istasyon adı" style={{ flex: 2, minWidth: 160, background: C.page, border: `1px solid ${C.border}`, color: C.paper, padding: '8px 10px', fontSize: 13 }} />
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button onClick={() => setNewGroup('taslama')} style={{ fontSize: 11, padding: '0 10px', cursor: 'pointer', background: newGroup === 'taslama' ? C.border : 'transparent', border: `1px solid ${C.border}`, color: C.paper }}>Taşlama</button>
+                <button onClick={() => setNewGroup('kaynakmontaj')} style={{ fontSize: 11, padding: '0 10px', cursor: 'pointer', background: newGroup === 'kaynakmontaj' ? C.border : 'transparent', border: `1px solid ${C.border}`, color: C.paper }}>Kaynak-Montaj</button>
+              </div>
+              <input type="number" min="0" step="0.5" placeholder="Standart a-s" className="num-input" style={{ width: 110 }} value={newStandard} onChange={(e) => setNewStandard(e.target.value)} />
+              <button onClick={addStation} style={{ background: C.copper, border: 'none', color: '#2A1A08', padding: '0 18px', cursor: 'pointer', fontWeight: 700, fontSize: 14, fontFamily: "'Rajdhani', sans-serif", boxShadow: `0 0 16px ${C.copper}55` }}>Ekle</button>
+            </div>
+          </div>
+        </div>
+
+        {/* Gun sekmeleri */}
+        <div style={{ display: 'flex', gap: 4, marginBottom: 0, borderBottom: `1px solid ${C.border}` }}>
+          {weekDates.map((d, i) => {
+            const active = i === dayIndex;
+            const hasData = hasDataForDate(d);
+            return (
+              <button key={i} onClick={() => setDayIndex(i)} style={{ flex: 1, background: active ? C.panel : 'transparent', border: `1px solid ${active ? C.border : 'transparent'}`, borderBottom: active ? `1px solid ${C.panel}` : `1px solid transparent`, boxShadow: active ? '0 0 14px rgba(0,229,255,0.18)' : 'none', marginBottom: -1, padding: '8px 2px', cursor: 'pointer', color: active ? C.paper : C.dim, position: 'relative' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, fontFamily: "'Rajdhani', sans-serif", letterSpacing: 0.5 }}>{DAY_NAMES[i]}</div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600 }}>{d.getDate()}</div>
+                {hasData && <div style={{ position: 'absolute', top: 4, right: 4, width: 4, height: 4, borderRadius: 2, background: C.good }} />}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Secili gunun istasyon girisleri */}
+        <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderTop: 'none', padding: 16, marginBottom: 24 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 12 }}>
+            {data.stations.map((s) => {
+              const entry = data.entries[`${selectedKey}|${s.id}`] || {};
+              const eff = calcEff(entry, s.standardHours);
+              const color = effColor(eff);
+              const actualNum = parseFloat(entry.actual) || 0;
+              const hasActual = entry.actual !== undefined && entry.actual !== '';
+              const totalStaff = parseFloat(entry.totalStaff) || 0;
+              const absentStaff = parseFloat(entry.absentStaff) || 0;
+              const presentStaff = Math.max(totalStaff - absentStaff, 0);
+              const lostHours = absentStaff * shiftHours;
+              const lossHours = (s.standardHours != null && hasActual) ? actualNum - s.standardHours : null;
+              const lossPercent = (lossHours != null && s.standardHours > 0) ? (lossHours / s.standardHours) * 100 : null;
+              const capacity = totalStaff > 0 ? presentStaff * shiftHours : null;
+              const capacityShortfall = (s.standardHours != null && capacity != null) ? s.standardHours - capacity : null;
+              const showStatus = hasAnyInput(entry);
+              const isFinalStage = FINAL_STAGES.includes(s.name);
+              const cascadeInfo = isFinalStage ? finalCascade.find((c) => c && c.station.id === s.id) : null;
+              return (
+                <div key={s.id} style={{ background: C.panelAlt, border: `1px solid ${C.border}`, padding: 14 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <span style={{ fontWeight: 600, fontSize: 14, fontFamily: "'Rajdhani', sans-serif", letterSpacing: 0.3 }}>{s.name}</span>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 700, color }}>
+                      {eff === null ? '—' : `${Math.round(eff)}%`}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                    <GroupTag group={s.group} />
+                    <span style={{ fontSize: 11, color: C.dim, fontFamily: "'JetBrains Mono', monospace" }}>
+                      Standart: {s.standardHours != null ? `${s.standardHours} a-s` : 'belirlenmedi'}
+                    </span>
+                  </div>
+
+                  {isFinalStage && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                      <div>
+                        <div style={{ fontSize: 10, color: C.dim, marginBottom: 4, textAlign: 'center' }}>Başlangıç saati {cascadeInfo?.autoStart ? '(otomatik)' : ''}</div>
+                        <input type="time" className="num-input" value={entry.startTime || ''} placeholder={minToTime(cascadeInfo?.startMin)} onChange={(e) => updateEntry(selectedKey, s.id, 'startTime', e.target.value)} />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 10, color: C.dim, marginBottom: 4, textAlign: 'center' }}>Tahmini bitiş</div>
+                        <div style={{ background: C.page, border: `1px solid ${C.border}`, borderRadius: 3, padding: '8px 8px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 14, color: cascadeInfo?.overflow ? C.bad : C.copper, fontWeight: 700 }}>
+                          {cascadeInfo && cascadeInfo.finishMin != null ? minToTime(cascadeInfo.finishMin) : '—'}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 10, color: C.dim, marginBottom: 4, textAlign: 'center' }}>Gerçekleşen adam-saat</div>
+                      <input type="number" min="0" step="0.5" className="num-input" placeholder="0" value={entry.actual || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'actual', e.target.value)} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 10, color: C.dim, marginBottom: 4, textAlign: 'center' }}>Mevcut personel</div>
+                      <input type="number" min="0" step="1" className="num-input" placeholder="0" value={entry.totalStaff || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'totalStaff', e.target.value)} />
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                    <div>
+                      <div style={{ fontSize: 10, color: C.dim, marginBottom: 4, textAlign: 'center' }}>Devamsız personel</div>
+                      <input type="number" min="0" step="1" className="num-input" placeholder="0" value={entry.absentStaff || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'absentStaff', e.target.value)} />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: absentStaff > 0 ? C.bad : C.dim, textAlign: 'center', fontFamily: "'JetBrains Mono', monospace" }}>
+                      {absentStaff > 0 ? `Kayıp: ${lostHours.toFixed(1)} a-s` : 'Kayıp yok'}
+                    </div>
+                  </div>
+
+                  <DimensionBar eff={eff} />
+
+                  {showStatus && (
+                    <div style={{ marginTop: 8, fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace", display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      {s.standardHours == null ? (
+                        <span style={{ color: C.dim }}>Standart girilmedi — verim ve kayıp hesaplanamıyor</span>
+                      ) : lossHours == null ? (
+                        <span style={{ color: C.dim }}>Gerçekleşen adam-saat girilmedi</span>
+                      ) : lossHours > 0.05 ? (
+                        <span style={{ color: C.bad }}>Kayıp: {lossHours.toFixed(1)} a-s (standardın üzerinde harcandı)</span>
+                      ) : lossHours < -0.05 ? (
+                        <span style={{ color: C.good }}>Tasarruf: {(-lossHours).toFixed(1)} a-s (standardın altında tamamlandı)</span>
+                      ) : (
+                        <span style={{ color: C.good }}>Tam zamanında tamamlandı</span>
+                      )}
+                      {lossPercent != null && lossPercent > allowancePercent && (
+                        <span style={{ color: C.bad }}>⚠ Kayıp oranı %{lossPercent.toFixed(0)} — izin verilen %{allowancePercent} mola payını (sigara/çay/su/telefon) aşıyor</span>
+                      )}
+                      {capacityShortfall != null && capacityShortfall > 0.05 && (
+                        <span style={{ color: C.copper }}>
+                          Devamsızlık nedeniyle ek mesai gerekebilir: ≈{capacityShortfall.toFixed(1)} a-s açık kapasite{presentStaff > 0 ? ` (≈${(capacityShortfall / presentStaff).toFixed(1)} saat/kişi)` : ''}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
+                    <div>
+                      <div style={{ fontSize: 9, color: C.dim, marginBottom: 4, textAlign: 'center' }}>Hedef adet (ops.)</div>
+                      <input type="number" min="0" className="num-input num-input-sm" placeholder="—" value={entry.target || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'target', e.target.value)} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 9, color: C.dim, marginBottom: 4, textAlign: 'center' }}>Üretilen adet (ops.)</div>
+                      <input type="number" min="0" className="num-input num-input-sm" placeholder="—" value={entry.produced || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'produced', e.target.value)} />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Final Temizlik teslim tahmini */}
+        {finalCascade.some((c) => c) && (
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, letterSpacing: 1.5, color: C.line, textTransform: 'uppercase', marginBottom: 8 }}>
+              Final Temizlik — Teslim Tahmini ({DAY_NAMES[dayIndex]} {selectedDate.getDate()} {MONTHS[selectedDate.getMonth()]})
+            </div>
+            <div style={{ background: C.panel, border: `1px solid ${C.copper}55`, boxShadow: `0 0 24px ${C.copper}18`, padding: 16 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
+                {finalCascade.map((c, i) => (
+                  <React.Fragment key={i}>
+                    <div style={{ minWidth: 130, flex: 1 }}>
+                      <div style={{ fontSize: 10, color: C.dim, marginBottom: 3, fontFamily: "'JetBrains Mono', monospace" }}>{c ? c.station.name.replace('Final Temizlik - ', '') : FINAL_STAGES[i].replace('Final Temizlik - ', '')}</div>
+                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 15, color: C.paper }}>
+                        {c ? minToTime(c.startMin) : '—'} → <span style={{ color: c && c.overflow ? C.bad : C.copper, fontWeight: 700 }}>{c && c.finishMin != null ? minToTime(c.finishMin) : '—'}</span>
+                      </div>
+                    </div>
+                    {i < FINAL_STAGES.length - 1 && <div style={{ display: 'flex', alignItems: 'center', color: C.dim, fontSize: 16 }}>→</div>}
+                  </React.Fragment>
+                ))}
+              </div>
+              <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12, display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 11, color: C.dim, fontFamily: "'JetBrains Mono', monospace", textTransform: 'uppercase', letterSpacing: 1 }}>Tahmini Teslim Saati</span>
+                {(() => {
+                  const last = [...finalCascade].reverse().find((c) => c && c.finishMin != null);
+                  return (
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 30, fontWeight: 700, color: last && last.overflow ? C.bad : C.good, textShadow: `0 0 16px ${last && last.overflow ? C.bad : C.good}66` }}>
+                      {last ? minToTime(last.finishMin) : '—'}
+                    </span>
+                  );
+                })()}
+                {finalCascade.some((c) => c && c.overflow) && (
+                  <span style={{ fontSize: 12, color: C.bad, fontFamily: "'JetBrains Mono', monospace" }}>⚠ Mesai saatleri içinde yetişmiyor — ek mesai gerekebilir</span>
+                )}
+              </div>
+              <div style={{ fontSize: 10.5, color: C.dim, marginTop: 8 }}>
+                Standart, mevcut personel sayısı ve %{allowancePercent} mola payına göre hesaplanır. Başlangıç saati girilmezse bir önceki aşamanın bitişinden otomatik devam eder.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Grup toplamlari */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10, marginBottom: 24 }}>
+          <div style={{ background: C.panel, border: `1px solid ${C.groupA}55`, boxShadow: `0 0 20px ${C.groupA}22`, padding: '14px 16px' }}>
+            <GroupTag group="taslama" />
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 700, color: C.groupA, marginTop: 8, textShadow: `0 0 14px ${C.groupA}66` }}>
+              {groupTotals.taslama.actual.toFixed(1)} <span style={{ fontSize: 13, color: C.dim, fontWeight: 500 }}>a-s</span>
+            </div>
+            <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>
+              {groupTotals.taslama.standard > 0 ? `Standart: ${groupTotals.taslama.standard.toFixed(1)} a-s (İlk Temizlik + Sıfırlama + Final Temizlik)` : 'İlk Temizlik + Sıfırlama + Final Temizlik'}
+            </div>
+          </div>
+          <div style={{ background: C.panel, border: `1px solid ${C.groupB}55`, boxShadow: `0 0 20px ${C.groupB}22`, padding: '14px 16px' }}>
+            <GroupTag group="kaynakmontaj" />
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 700, color: C.groupB, marginTop: 8, textShadow: `0 0 14px ${C.groupB}66` }}>
+              {groupTotals.kaynakmontaj.actual.toFixed(1)} <span style={{ fontSize: 13, color: C.dim, fontWeight: 500 }}>a-s</span>
+            </div>
+            <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>
+              {groupTotals.kaynakmontaj.standard > 0 ? `Standart: ${groupTotals.kaynakmontaj.standard.toFixed(1)} a-s` : 'Diğer tüm istasyonlar'}
+            </div>
+          </div>
+          <div style={{ background: C.panel, border: `1px solid ${C.bad}55`, boxShadow: `0 0 20px ${C.bad}22`, padding: '14px 16px' }}>
+            <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: C.bad, border: `1px solid ${C.bad}`, borderRadius: 3, padding: '1px 6px', textTransform: 'uppercase', letterSpacing: 0.5 }}>Devamsızlık</span>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 700, color: C.bad, marginTop: 8, textShadow: `0 0 14px ${C.bad}66` }}>
+              {absenteeismTotal.persons} <span style={{ fontSize: 13, color: C.dim, fontWeight: 500 }}>kişi-gün</span>
+            </div>
+            <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>{absenteeismTotal.hours.toFixed(1)} adam-saat kayıp bu hafta</div>
+          </div>
+          <div style={{ background: C.panel, border: `1px solid ${C.copper}55`, boxShadow: `0 0 20px ${C.copper}22`, padding: '14px 16px' }}>
+            <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: C.copper, border: `1px solid ${C.copper}`, borderRadius: 3, padding: '1px 6px', textTransform: 'uppercase', letterSpacing: 0.5 }}>Verim Kaybı</span>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 700, color: C.copper, marginTop: 8, textShadow: `0 0 14px ${C.copper}66` }}>
+              {lossTotal.toFixed(1)} <span style={{ fontSize: 13, color: C.dim, fontWeight: 500 }}>a-s</span>
+            </div>
+            <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>Standardın üzerinde harcanan toplam adam-saat</div>
+          </div>
+        </div>
+
+        {/* Ek mesai gereken istasyonlar */}
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, letterSpacing: 1.5, color: C.line, textTransform: 'uppercase', marginBottom: 8 }}>
+            Ek Mesai Gerekebilecek İstasyonlar
+          </div>
+          {overtimeStations.length === 0 ? (
+            <div style={{ background: C.panel, border: `1px solid ${C.border}`, padding: 14, fontSize: 13, color: C.good }}>
+              Bu hafta ek mesai gereken istasyon görünmüyor.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {overtimeStations.map((s) => (
+                <div key={s.id} style={{ background: C.panel, border: `1px solid ${C.bad}`, boxShadow: `0 0 18px ${C.bad}33`, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <GroupTag group={s.group} />
+                    <span style={{ fontWeight: 600, fontFamily: "'Rajdhani', sans-serif" }}>{s.name}</span>
+                  </div>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: C.bad }}>
+                    ≈{s.totalCapacityShortfall.toFixed(1)} a-s kapasite açığı{s.avgPresent > 0 ? ` · ≈${(s.totalCapacityShortfall / s.avgPresent).toFixed(1)} saat/kişi` : ''}
+                    {s.totalAbsent > 0 ? ` · ${s.totalAbsent} kişi devamsız` : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Haftalik ozet */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, letterSpacing: 1.5, color: C.line, textTransform: 'uppercase' }}>Haftalık özet — istasyon bazlı</span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={printReport} style={{ background: C.panel, border: `1px solid ${C.border}`, color: C.paper, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>Yazdır / PDF</button>
+            <button onClick={exportCSV} style={{ background: C.panel, border: `1px solid ${C.border}`, color: C.paper, padding: '6px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>CSV indir</button>
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 10 }}>
+          {stationSummaries.map((s, i) => (
+            <div key={s.id} style={{ background: C.panel, border: `1px solid ${C.border}`, padding: '12px 14px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: C.dim }}>{String(i + 1).padStart(2, '0')}</span>
+                  <span style={{ fontWeight: 600, fontSize: 14, fontFamily: "'Rajdhani', sans-serif" }}>{s.name}</span>
+                </div>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 16, fontWeight: 700, color: effColor(s.avg), textShadow: `0 0 10px ${effColor(s.avg)}` }}>
+                  {s.avg === null ? '—' : `${Math.round(s.avg)}%`}
+                </span>
+              </div>
+              <div style={{ marginBottom: 8 }}><GroupTag group={s.group} /></div>
+              <DimensionBar eff={s.avg} height={14} />
+              <div style={{ fontSize: 11, color: C.dim, marginTop: 8 }}>
+                {s.days > 0 ? `${s.totalActual.toFixed(1)} a-s gerçekleşen${s.standardHours != null ? ` / ${s.totalStandardExpected.toFixed(1)} a-s standart` : ''} · ${s.days} gün veri` : 'Bu hafta henüz veri girilmedi'}
+              </div>
+              {s.lossTotal != null && s.lossTotal > 0.05 && (
+                <div style={{ fontSize: 11, color: C.bad, marginTop: 2 }}>Verim kaybı: {s.lossTotal.toFixed(1)} a-s</div>
+              )}
+              {s.lossTotal != null && s.lossTotal < -0.05 && (
+                <div style={{ fontSize: 11, color: C.good, marginTop: 2 }}>Tasarruf: {(-s.lossTotal).toFixed(1)} a-s</div>
+              )}
+              {s.totalAbsent > 0 && (
+                <div style={{ fontSize: 11, color: C.bad, marginTop: 2 }}>{s.totalAbsent} kişi-gün devamsız · {s.totalLost.toFixed(1)} a-s kayıp</div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div style={{ marginTop: 28, fontSize: 11, color: C.dim, textAlign: 'center' }}>
+          Veriler ortak bir bulut panosunda (Firebase) saklanır — bu dosyayı kullanan herkes aynı veriyi görür ve düzenler. Kayıt için internet bağlantısı gerekir.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
