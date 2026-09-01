@@ -112,20 +112,23 @@ const SHIFT_BLOCKS = [
   { start: '12:50', end: '15:15' },
   { start: '15:30', end: '16:55' },
 ];
+const OVERTIME_BLOCK = { start: '17:25', end: '20:00' }; // 16:55 paydos, 16:55-17:25 mola, sonra molasız 20:00'a kadar
+const ALL_BLOCKS = [...SHIFT_BLOCKS, OVERTIME_BLOCK];
 function timeToMin(t) { if (!t) return null; const parts = t.split(':'); if (parts.length < 2) return null; const h = parseInt(parts[0], 10), m = parseInt(parts[1], 10); if (isNaN(h) || isNaN(m)) return null; return h * 60 + m; }
 function minToTime(m) { if (m == null || isNaN(m)) return '—'; m = Math.round(m); const h = Math.floor(m / 60), mm = m % 60; return `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`; }
 const SHIFT_START_MIN = timeToMin(SHIFT_BLOCKS[0].start);
 const SHIFT_END_MIN = timeToMin(SHIFT_BLOCKS[SHIFT_BLOCKS.length - 1].end);
+const OT_END_MIN = timeToMin(OVERTIME_BLOCK.end);
 const NET_SHIFT_MIN = SHIFT_BLOCKS.reduce((acc, b) => acc + (timeToMin(b.end) - timeToMin(b.start)), 0);
 
-// Walk through the shift blocks (skipping breaks) starting at startMin, consuming workMinutesNeeded of actual work time.
-function estimateFinishTime(startMin, workMinutesNeeded) {
+// Walk through the given work blocks (skipping breaks/gaps) starting at startMin, consuming workMinutesNeeded of actual work time.
+function estimateFinishTime(startMin, workMinutesNeeded, blocks) {
+  blocks = blocks || SHIFT_BLOCKS;
   if (startMin == null || workMinutesNeeded == null || workMinutesNeeded <= 0) return { finishMin: startMin, overflow: false };
   let remaining = workMinutesNeeded;
-  let lastBlockEnd = SHIFT_END_MIN;
-  for (const block of SHIFT_BLOCKS) {
+  const lastBlockEnd = timeToMin(blocks[blocks.length - 1].end);
+  for (const block of blocks) {
     const bStart = timeToMin(block.start), bEnd = timeToMin(block.end);
-    lastBlockEnd = bEnd;
     if (bEnd <= startMin) continue;
     const segStart = Math.max(bStart, startMin);
     const segAvail = bEnd - segStart;
@@ -133,7 +136,15 @@ function estimateFinishTime(startMin, workMinutesNeeded) {
     if (remaining <= segAvail) return { finishMin: segStart + remaining, overflow: false };
     remaining -= segAvail;
   }
-  return { finishMin: SHIFT_END_MIN + remaining, overflow: true };
+  return { finishMin: lastBlockEnd + remaining, overflow: true };
+}
+// Üç durumu ayırt eder: normal mesaide biter / ek mesai gerekir ama 20:00'a kadar biter / ek mesaide de bitmez
+function estimateWithOvertime(startMin, workMinutesNeeded) {
+  const normal = estimateFinishTime(startMin, workMinutesNeeded, SHIFT_BLOCKS);
+  if (!normal.overflow) return { finishMin: normal.finishMin, mode: 'normal' };
+  const withOT = estimateFinishTime(startMin, workMinutesNeeded, ALL_BLOCKS);
+  if (!withOT.overflow) return { finishMin: withOT.finishMin, mode: 'overtime' };
+  return { finishMin: withOT.finishMin, mode: 'exceeds', overMinutes: withOT.finishMin - OT_END_MIN };
 }
 function stageRequiredMinutes(standardHours, presentStaff, allowancePercent) {
   if (standardHours == null || !presentStaff || presentStaff <= 0) return null;
@@ -359,9 +370,9 @@ function App() {
       const absentStaff = parseFloat(entry.absentStaff) || 0;
       const present = Math.max(totalStaff - absentStaff, 0);
       const neededMin = stageRequiredMinutes(st.standardHours, present, allowancePercent);
-      let finishMin = null, overflow = false;
-      if (neededMin != null) { const r = estimateFinishTime(startMin, neededMin); finishMin = r.finishMin; overflow = r.overflow; }
-      results.push({ station: st, startMin, neededMin, finishMin, overflow, present, autoStart: explicitStart == null });
+      let finishMin = null, mode = 'normal', overMinutes = 0;
+      if (neededMin != null) { const r = estimateWithOvertime(startMin, neededMin); finishMin = r.finishMin; mode = r.mode; overMinutes = r.overMinutes || 0; }
+      results.push({ station: st, startMin, neededMin, finishMin, mode, overMinutes, present, autoStart: explicitStart == null });
       cursor = finishMin != null ? finishMin : startMin;
     });
     return results;
@@ -621,12 +632,20 @@ function App() {
                         <input type="time" className="num-input" value={entry.startTime || ''} placeholder={minToTime(cascadeInfo?.startMin)} onChange={(e) => updateEntry(selectedKey, s.id, 'startTime', e.target.value)} />
                       </div>
                       <div>
-                        <div style={{ fontSize: 10, color: C.dim, marginBottom: 4, textAlign: 'center' }}>Tahmini bitiş</div>
-                        <div style={{ background: C.page, border: `1px solid ${C.border}`, borderRadius: 3, padding: '8px 8px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 14, color: cascadeInfo?.overflow ? C.bad : C.copper, fontWeight: 700 }}>
+                        <div style={{ fontSize: 10, color: C.dim, marginBottom: 4, textAlign: 'center' }}>
+                          {cascadeInfo?.mode === 'exceeds' ? 'Mesaide de bitmez' : cascadeInfo?.mode === 'overtime' ? 'Mesaide biter' : 'Tahmini bitiş'}
+                        </div>
+                        <div style={{ background: C.page, border: `1px solid ${C.border}`, borderRadius: 3, padding: '8px 8px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 14, color: cascadeInfo?.mode === 'exceeds' ? C.bad : cascadeInfo?.mode === 'overtime' ? C.copper : C.good, fontWeight: 700 }}>
                           {cascadeInfo && cascadeInfo.finishMin != null ? minToTime(cascadeInfo.finishMin) : '—'}
                         </div>
                       </div>
                     </div>
+                  )}
+                  {isFinalStage && cascadeInfo?.mode === 'overtime' && (
+                    <div style={{ fontSize: 10.5, color: C.copper, marginBottom: 8, fontFamily: "'JetBrains Mono', monospace" }}>⚠ Bu iş normal mesaide bitmiyor, ek mesai gerektiriyor</div>
+                  )}
+                  {isFinalStage && cascadeInfo?.mode === 'exceeds' && (
+                    <div style={{ fontSize: 10.5, color: C.bad, marginBottom: 8, fontFamily: "'JetBrains Mono', monospace" }}>⚠ Ek mesaide (20:00) de yetişmiyor — ≈{Math.round(cascadeInfo.overMinutes)} dk aşım</div>
                   )}
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
@@ -704,8 +723,10 @@ function App() {
                     <div style={{ minWidth: 130, flex: 1 }}>
                       <div style={{ fontSize: 10, color: C.dim, marginBottom: 3, fontFamily: "'JetBrains Mono', monospace" }}>{c ? c.station.name.replace('Final Temizlik - ', '') : FINAL_STAGES[i].replace('Final Temizlik - ', '')}</div>
                       <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 15, color: C.paper }}>
-                        {c ? minToTime(c.startMin) : '—'} → <span style={{ color: c && c.overflow ? C.bad : C.copper, fontWeight: 700 }}>{c && c.finishMin != null ? minToTime(c.finishMin) : '—'}</span>
+                        {c ? minToTime(c.startMin) : '—'} → <span style={{ color: c?.mode === 'exceeds' ? C.bad : c?.mode === 'overtime' ? C.copper : C.good, fontWeight: 700 }}>{c && c.finishMin != null ? minToTime(c.finishMin) : '—'}</span>
                       </div>
+                      {c?.mode === 'overtime' && <div style={{ fontSize: 9.5, color: C.copper, marginTop: 2 }}>ek mesai gerekir</div>}
+                      {c?.mode === 'exceeds' && <div style={{ fontSize: 9.5, color: C.bad, marginTop: 2 }}>ek mesaide de bitmez</div>}
                     </div>
                     {i < FINAL_STAGES.length - 1 && <div style={{ display: 'flex', alignItems: 'center', color: C.dim, fontSize: 16 }}>→</div>}
                   </React.Fragment>
@@ -715,18 +736,22 @@ function App() {
                 <span style={{ fontSize: 11, color: C.dim, fontFamily: "'JetBrains Mono', monospace", textTransform: 'uppercase', letterSpacing: 1 }}>Tahmini Teslim Saati</span>
                 {(() => {
                   const last = [...finalCascade].reverse().find((c) => c && c.finishMin != null);
+                  const lastColor = last?.mode === 'exceeds' ? C.bad : last?.mode === 'overtime' ? C.copper : C.good;
                   return (
-                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 30, fontWeight: 700, color: last && last.overflow ? C.bad : C.good, textShadow: `0 0 16px ${last && last.overflow ? C.bad : C.good}66` }}>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 30, fontWeight: 700, color: lastColor, textShadow: `0 0 16px ${lastColor}66` }}>
                       {last ? minToTime(last.finishMin) : '—'}
                     </span>
                   );
                 })()}
-                {finalCascade.some((c) => c && c.overflow) && (
-                  <span style={{ fontSize: 12, color: C.bad, fontFamily: "'JetBrains Mono', monospace" }}>⚠ Mesai saatleri içinde yetişmiyor — ek mesai gerekebilir</span>
+                {finalCascade.some((c) => c && c.mode === 'overtime') && !finalCascade.some((c) => c && c.mode === 'exceeds') && (
+                  <span style={{ fontSize: 12, color: C.copper, fontFamily: "'JetBrains Mono', monospace" }}>⚠ Normal mesaide bitmiyor — ek mesai gerekiyor (16:55 paydos, 17:25–20:00 çalışma)</span>
+                )}
+                {finalCascade.some((c) => c && c.mode === 'exceeds') && (
+                  <span style={{ fontSize: 12, color: C.bad, fontFamily: "'JetBrains Mono', monospace" }}>⚠ Ek mesai (20:00'a kadar) de yetmiyor — iş bugün bitmeyebilir</span>
                 )}
               </div>
               <div style={{ fontSize: 10.5, color: C.dim, marginTop: 8 }}>
-                Standart, mevcut personel sayısı ve %{allowancePercent} mola payına göre hesaplanır. Başlangıç saati girilmezse bir önceki aşamanın bitişinden otomatik devam eder.
+                Standart, mevcut personel sayısı ve %{allowancePercent} mola payına göre hesaplanır. Başlangıç saati girilmezse bir önceki aşamanın bitişinden otomatik devam eder. 16:55'i aşan işler için 17:25–20:00 ek mesai bloğu (16:55–17:25 mola sonrası, molasız) otomatik hesaba katılır.
               </div>
             </div>
           </div>
