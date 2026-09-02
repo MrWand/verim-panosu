@@ -44,6 +44,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script>
   const firebaseConfig = {
     apiKey: "AIzaSyDXK2-qdEITwA1ud3bWQzbAv-MpsOvzZYM",
@@ -55,11 +56,13 @@
   };
   firebase.initializeApp(firebaseConfig);
   window.__db = firebase.firestore();
+  window.__auth = firebase.auth();
 </script>
 
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef, useMemo } = React;
 const db = window.__db;
+const auth = window.__auth;
 
 const DAY_NAMES = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
 const MONTHS = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
@@ -145,6 +148,21 @@ function estimateWithOvertime(startMin, workMinutesNeeded) {
   const withOT = estimateFinishTime(startMin, workMinutesNeeded, ALL_BLOCKS);
   if (!withOT.overflow) return { finishMin: withOT.finishMin, mode: 'overtime' };
   return { finishMin: withOT.finishMin, mode: 'exceeds', overMinutes: withOT.finishMin - OT_END_MIN };
+}
+// Normal mesaide bitmeyen bir iş için, kullanıcının "mesai yapılacak / yapılmayacak" kararına göre sonucu yorumlar.
+// decision: 'yes' | 'no' | undefined (henüz karar verilmedi)
+function estimateWithDecision(startMin, workMinutesNeeded, decision) {
+  const normal = estimateFinishTime(startMin, workMinutesNeeded, SHIFT_BLOCKS);
+  if (!normal.overflow) return { finishMin: normal.finishMin, mode: 'normal', needsDecision: false };
+  if (decision === 'yes') {
+    const withOT = estimateFinishTime(startMin, workMinutesNeeded, ALL_BLOCKS);
+    if (!withOT.overflow) return { finishMin: withOT.finishMin, mode: 'overtime', needsDecision: false };
+    return { finishMin: withOT.finishMin, mode: 'exceeds', overMinutes: withOT.finishMin - OT_END_MIN, needsDecision: false };
+  }
+  if (decision === 'no') {
+    return { finishMin: normal.finishMin, mode: 'carryover', needsDecision: false };
+  }
+  return { finishMin: normal.finishMin, mode: 'pending', needsDecision: true };
 }
 function stageRequiredMinutes(standardHours, presentStaff, allowancePercent) {
   if (standardHours == null || !presentStaff || presentStaff <= 0) return null;
@@ -249,7 +267,72 @@ function seedStations(existing) {
   return [...existing, ...toAdd];
 }
 
-function App() {
+// Kullanıcı adını, Firebase Auth'un gerektirdiği e-posta biçimine çevirir (gerçek bir e-posta değildir, sadece giriş kimliği olarak kullanılır)
+function usernameToEmail(username) {
+  const clean = (username || '').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
+  return `${clean || 'kullanici'}@verim-panosu.local`;
+}
+
+function LoginScreen() {
+  const [mode, setMode] = useState('login'); // 'login' | 'register'
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError('');
+    if (!username.trim() || password.length < 6) {
+      setError('Kullanıcı adı gir ve en az 6 karakterli bir şifre seç.');
+      return;
+    }
+    setBusy(true);
+    const email = usernameToEmail(username);
+    try {
+      if (mode === 'register') {
+        const cred = await auth.createUserWithEmailAndPassword(email, password);
+        await cred.user.updateProfile({ displayName: username.trim() });
+      } else {
+        await auth.signInWithEmailAndPassword(email, password);
+      }
+    } catch (err) {
+      const map = {
+        'auth/email-already-in-use': 'Bu kullanıcı adı zaten alınmış.',
+        'auth/wrong-password': 'Şifre yanlış.',
+        'auth/user-not-found': 'Böyle bir kullanıcı bulunamadı — önce hesap oluştur.',
+        'auth/weak-password': 'Şifre en az 6 karakter olmalı.',
+        'auth/invalid-email': 'Kullanıcı adında geçersiz karakterler var.',
+        'auth/invalid-credential': 'Kullanıcı adı ya da şifre yanlış.',
+      };
+      setError(map[err.code] || 'Bir hata oldu: ' + err.message);
+    }
+    setBusy(false);
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#05080D', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'IBM Plex Sans', sans-serif", padding: 16 }}>
+      <form onSubmit={handleSubmit} style={{ width: '100%', maxWidth: 340, background: 'rgba(14,24,36,0.9)', border: '1px solid rgba(0,229,255,0.28)', borderRadius: 4, padding: 24, boxShadow: '0 0 32px rgba(0,229,255,0.10)' }}>
+        <div style={{ fontFamily: "'Rajdhani', sans-serif", fontWeight: 700, fontSize: 20, color: '#E8F6FF', marginBottom: 2, textShadow: '0 0 14px rgba(0,229,255,0.45)' }}>İstasyon Verim Panosu</div>
+        <div style={{ fontSize: 12, color: '#8FAAC2', marginBottom: 20 }}>Epsilon Solentek Raylı Sistemler</div>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+          <button type="button" onClick={() => { setMode('login'); setError(''); }} style={{ flex: 1, padding: '8px 0', fontSize: 12, fontWeight: 600, cursor: 'pointer', background: mode === 'login' ? '#2E5578' : 'transparent', border: '1px solid #2E5578', color: '#E8F6FF' }}>Giriş Yap</button>
+          <button type="button" onClick={() => { setMode('register'); setError(''); }} style={{ flex: 1, padding: '8px 0', fontSize: 12, fontWeight: 600, cursor: 'pointer', background: mode === 'register' ? '#2E5578' : 'transparent', border: '1px solid #2E5578', color: '#E8F6FF' }}>Yeni Hesap</button>
+        </div>
+        <div style={{ fontSize: 10, color: '#8FAAC2', marginBottom: 4 }}>Kullanıcı adı</div>
+        <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="örn. ahmet" className="num-input" style={{ marginBottom: 12, textAlign: 'left' }} />
+        <div style={{ fontSize: 10, color: '#8FAAC2', marginBottom: 4 }}>Şifre</div>
+        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="en az 6 karakter" className="num-input" style={{ marginBottom: 16, textAlign: 'left' }} />
+        {error && <div style={{ fontSize: 12, color: '#FF5468', marginBottom: 12 }}>{error}</div>}
+        <button type="submit" disabled={busy} style={{ width: '100%', padding: '10px 0', background: '#D98E4A', border: 'none', color: '#2A1A08', fontWeight: 700, fontSize: 13, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1 }}>
+          {busy ? 'Bekleyin…' : mode === 'register' ? 'Hesap Oluştur' : 'Giriş Yap'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function App({ currentUser, onLogout }) {
   const [data, setData] = useState({ stations: [], entries: {}, settings: { allowancePercent: 10 } });
   const [connected, setConnected] = useState(true);
   const [weekStart, setWeekStart] = useState(() => getMonday(new Date()));
@@ -257,7 +340,21 @@ function App() {
   const [newStation, setNewStation] = useState('');
   const [newGroup, setNewGroup] = useState('kaynakmontaj');
   const [newStandard, setNewStandard] = useState('');
+  const [lastEdit, setLastEdit] = useState(null);
   const pendingWrites = useRef({});
+
+  const username = currentUser?.displayName || currentUser?.email || 'Bilinmeyen';
+
+  function recordActivity() {
+    db.collection('meta').doc('lastEdit').set({ username, timestamp: Date.now() }).catch(() => {});
+  }
+
+  useEffect(() => {
+    const unsubLastEdit = db.collection('meta').doc('lastEdit').onSnapshot((doc) => {
+      setLastEdit(doc.exists ? doc.data() : null);
+    }, () => {});
+    return () => unsubLastEdit();
+  }, []);
 
   useEffect(() => {
     const onOnline = () => setConnected(true);
@@ -317,7 +414,7 @@ function App() {
     existing.timer = setTimeout(() => {
       const toWrite = pendingWrites.current[key]?.data;
       delete pendingWrites.current[key];
-      db.collection(collectionName).doc(docId).set(toWrite, { merge: true }).catch((e) => console.error('Yazma hatası', e));
+      db.collection(collectionName).doc(docId).set(toWrite, { merge: true }).then(() => recordActivity()).catch((e) => console.error('Yazma hatası', e));
     }, 450);
     pendingWrites.current[key] = existing;
   }
@@ -338,7 +435,7 @@ function App() {
     const id = 'st_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const st = { id, name, group: newGroup, standardHours: newStandard === '' ? null : parseFloat(newStandard) };
     setData((prev) => ({ ...prev, stations: [...prev.stations, st] }));
-    db.collection('stations').doc(id).set({ name: st.name, group: st.group, standardHours: st.standardHours }).catch((e) => console.error('Yazma hatası', e));
+    db.collection('stations').doc(id).set({ name: st.name, group: st.group, standardHours: st.standardHours }).then(() => recordActivity()).catch((e) => console.error('Yazma hatası', e));
     setNewStation(''); setNewStandard('');
   }
   function removeStation(id) {
@@ -347,7 +444,7 @@ function App() {
       Object.keys(entries).forEach((k) => { if (k.endsWith('|' + id)) delete entries[k]; });
       return { stations: prev.stations.filter((s) => s.id !== id), entries, settings: prev.settings };
     });
-    db.collection('stations').doc(id).delete().catch((e) => console.error('Silme hatası', e));
+    db.collection('stations').doc(id).delete().then(() => recordActivity()).catch((e) => console.error('Silme hatası', e));
     Object.keys(data.entries).forEach((k) => {
       if (k.endsWith('|' + id)) db.collection('entries').doc(k).delete().catch(() => {});
     });
@@ -425,9 +522,9 @@ function App() {
       const cInfo = carryoverMap[st.id]?.[dayIndex];
       const effectiveStandard = cInfo ? cInfo.effectiveStandard : st.standardHours;
       const neededMin = stageRequiredMinutes(effectiveStandard, present, allowancePercent);
-      let finishMin = null, mode = 'normal', overMinutes = 0;
-      if (neededMin != null) { const r = estimateWithOvertime(startMin, neededMin); finishMin = r.finishMin; mode = r.mode; overMinutes = r.overMinutes || 0; }
-      results.push({ station: st, startMin, neededMin, finishMin, mode, overMinutes, present, autoStart: explicitStart == null, effectiveStandard, isCarryover: cInfo?.isCarryover });
+      let finishMin = null, mode = 'normal', overMinutes = 0, needsDecision = false;
+      if (neededMin != null) { const r = estimateWithDecision(startMin, neededMin, entry.overtimeDecision); finishMin = r.finishMin; mode = r.mode; overMinutes = r.overMinutes || 0; needsDecision = r.needsDecision; }
+      results.push({ station: st, startMin, neededMin, finishMin, mode, overMinutes, needsDecision, present, autoStart: explicitStart == null, effectiveStandard, isCarryover: cInfo?.isCarryover });
       cursor = finishMin != null ? finishMin : startMin;
     });
     return results;
@@ -599,6 +696,16 @@ function App() {
           </div>
         </div>
 
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 20, fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: C.dim }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+            <span>Giriş yapan: <span style={{ color: C.paper }}>{username}</span></span>
+            {lastEdit && (
+              <span>Son değişiklik: <span style={{ color: C.copper }}>{lastEdit.username}</span> · {new Date(lastEdit.timestamp).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+            )}
+          </div>
+          <button onClick={() => auth.signOut()} style={{ background: 'none', border: `1px solid ${C.border}`, color: C.dim, padding: '4px 12px', fontSize: 11, cursor: 'pointer', fontFamily: "'JetBrains Mono', monospace" }}>Çıkış Yap</button>
+        </div>
+
         {/* Istasyon yonetimi */}
         <div style={{ marginBottom: 20 }}>
           <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, letterSpacing: 1.5, color: C.line, textTransform: 'uppercase', marginBottom: 8 }}>
@@ -677,8 +784,8 @@ function App() {
                 const startMinGeneric = explicitStart != null ? explicitStart : SHIFT_START_MIN;
                 const neededMinGeneric = stageRequiredMinutes(effectiveStandard, presentStaff, allowancePercent);
                 if (neededMinGeneric != null) {
-                  const est = estimateWithOvertime(startMinGeneric, neededMinGeneric);
-                  displayInfo = { startMin: startMinGeneric, finishMin: est.finishMin, mode: est.mode, overMinutes: est.overMinutes || 0, autoStart: explicitStart == null };
+                  const est = estimateWithDecision(startMinGeneric, neededMinGeneric, entry.overtimeDecision);
+                  displayInfo = { startMin: startMinGeneric, finishMin: est.finishMin, mode: est.mode, overMinutes: est.overMinutes || 0, needsDecision: est.needsDecision, autoStart: explicitStart == null };
                 } else {
                   displayInfo = null;
                 }
@@ -721,18 +828,47 @@ function App() {
                     </div>
                     <div>
                       <div style={{ fontSize: 10, color: C.dim, marginBottom: 4, textAlign: 'center' }}>
-                        {displayInfo?.mode === 'exceeds' ? 'Mesaide de bitmez' : displayInfo?.mode === 'overtime' ? 'Mesaide biter' : 'Tahmini bitiş'}
+                        {displayInfo?.mode === 'exceeds' ? 'Mesaide de bitmez' : displayInfo?.mode === 'overtime' ? 'Mesaide biter' : displayInfo?.mode === 'carryover' ? 'Yarına devrediyor' : displayInfo?.mode === 'pending' ? 'Karar bekleniyor' : 'Tahmini bitiş'}
                       </div>
-                      <div style={{ background: C.page, border: `1px solid ${C.border}`, borderRadius: 3, padding: '8px 8px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 14, color: displayInfo?.mode === 'exceeds' ? C.bad : displayInfo?.mode === 'overtime' ? C.copper : C.good, fontWeight: 700 }}>
-                        {displayInfo && displayInfo.finishMin != null ? minToTime(displayInfo.finishMin) : '—'}
+                      <div style={{ background: C.page, border: `1px solid ${C.border}`, borderRadius: 3, padding: '8px 8px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 14, color: displayInfo?.mode === 'exceeds' ? C.bad : displayInfo?.mode === 'overtime' ? C.copper : displayInfo?.mode === 'carryover' ? C.bad : displayInfo?.mode === 'pending' ? C.copper : C.good, fontWeight: 700 }}>
+                        {displayInfo?.mode === 'carryover' ? '↷ ertesi gün' : displayInfo && displayInfo.finishMin != null ? minToTime(displayInfo.finishMin) : '—'}
                       </div>
                     </div>
                   </div>
+                  {displayInfo?.needsDecision && (
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ fontSize: 10.5, color: C.copper, marginBottom: 5, fontFamily: "'JetBrains Mono', monospace" }}>⚠ Bu iş normal mesaide (16:55) bitmiyor — mesai yapılacak mı?</div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button
+                          onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'yes')}
+                          style={{ flex: 1, fontSize: 11, fontWeight: 600, padding: '7px 0', cursor: 'pointer', background: 'transparent', border: `1px solid ${C.copper}`, color: C.copper }}
+                        >
+                          Mesai Yapılacak
+                        </button>
+                        <button
+                          onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'no')}
+                          style={{ flex: 1, fontSize: 11, fontWeight: 600, padding: '7px 0', cursor: 'pointer', background: 'transparent', border: `1px solid ${C.bad}`, color: C.bad }}
+                        >
+                          Mesai Yapılmayacak
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {(displayInfo?.mode === 'overtime' || displayInfo?.mode === 'exceeds' || displayInfo?.mode === 'carryover') && !displayInfo?.needsDecision && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <span style={{ fontSize: 10, color: C.dim, fontFamily: "'JetBrains Mono', monospace" }}>Karar:</span>
+                      <button onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'yes')} style={{ fontSize: 10.5, fontWeight: 600, padding: '4px 10px', cursor: 'pointer', background: entry.overtimeDecision === 'yes' ? C.copper : 'transparent', border: `1px solid ${C.copper}`, color: entry.overtimeDecision === 'yes' ? '#2A1A08' : C.copper }}>Mesai Yapılacak</button>
+                      <button onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'no')} style={{ fontSize: 10.5, fontWeight: 600, padding: '4px 10px', cursor: 'pointer', background: entry.overtimeDecision === 'no' ? C.bad : 'transparent', border: `1px solid ${C.bad}`, color: entry.overtimeDecision === 'no' ? '#3D0D09' : C.bad }}>Mesai Yapılmayacak</button>
+                    </div>
+                  )}
                   {displayInfo?.mode === 'overtime' && (
-                    <div style={{ fontSize: 10.5, color: C.copper, marginBottom: 8, fontFamily: "'JetBrains Mono', monospace" }}>⚠ Bu iş normal mesaide bitmiyor, ek mesai gerektiriyor</div>
+                    <div style={{ fontSize: 10.5, color: C.copper, marginBottom: 8, fontFamily: "'JetBrains Mono', monospace" }}>⚠ Mesai yapılacak — bu iş normal mesaide bitmiyor</div>
                   )}
                   {displayInfo?.mode === 'exceeds' && (
-                    <div style={{ fontSize: 10.5, color: C.bad, marginBottom: 8, fontFamily: "'JetBrains Mono', monospace" }}>⚠ Ek mesaide (20:00) de yetişmiyor — ≈{Math.round(displayInfo.overMinutes)} dk aşım</div>
+                    <div style={{ fontSize: 10.5, color: C.bad, marginBottom: 8, fontFamily: "'JetBrains Mono', monospace" }}>⚠ Mesai yapılsa da (20:00'a kadar) yetişmiyor — ≈{Math.round(displayInfo.overMinutes)} dk aşım, kalan kısım yarına devredebilir</div>
+                  )}
+                  {displayInfo?.mode === 'carryover' && (
+                    <div style={{ fontSize: 10.5, color: C.bad, marginBottom: 8, fontFamily: "'JetBrains Mono', monospace" }}>⚠ Mesai yapılmayacak — iş normal mesaide biten kısımla kalıp, kalanı yarına devredecek</div>
                   )}
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
@@ -819,10 +955,12 @@ function App() {
                     <div style={{ minWidth: 130, flex: 1 }}>
                       <div style={{ fontSize: 10, color: C.dim, marginBottom: 3, fontFamily: "'JetBrains Mono', monospace" }}>{c ? c.station.name.replace('Final Temizlik - ', '') : FINAL_STAGES[i].replace('Final Temizlik - ', '')}</div>
                       <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 15, color: C.paper }}>
-                        {c ? minToTime(c.startMin) : '—'} → <span style={{ color: c?.mode === 'exceeds' ? C.bad : c?.mode === 'overtime' ? C.copper : C.good, fontWeight: 700 }}>{c && c.finishMin != null ? minToTime(c.finishMin) : '—'}</span>
+                        {c ? minToTime(c.startMin) : '—'} → <span style={{ color: c?.mode === 'exceeds' || c?.mode === 'carryover' ? C.bad : c?.mode === 'overtime' || c?.mode === 'pending' ? C.copper : C.good, fontWeight: 700 }}>{c?.mode === 'carryover' ? '↷ yarına' : c && c.finishMin != null ? minToTime(c.finishMin) : '—'}</span>
                       </div>
+                      {c?.mode === 'pending' && <div style={{ fontSize: 9.5, color: C.copper, marginTop: 2 }}>mesai kararı bekleniyor</div>}
                       {c?.mode === 'overtime' && <div style={{ fontSize: 9.5, color: C.copper, marginTop: 2 }}>ek mesai gerekir</div>}
                       {c?.mode === 'exceeds' && <div style={{ fontSize: 9.5, color: C.bad, marginTop: 2 }}>ek mesaide de bitmez</div>}
+                      {c?.mode === 'carryover' && <div style={{ fontSize: 9.5, color: C.bad, marginTop: 2 }}>yarına devrediyor</div>}
                     </div>
                     {i < FINAL_STAGES.length - 1 && <div style={{ display: 'flex', alignItems: 'center', color: C.dim, fontSize: 16 }}>→</div>}
                   </React.Fragment>
@@ -962,7 +1100,32 @@ function App() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+function Root() {
+  const [authState, setAuthState] = useState('loading'); // 'loading' | 'signed-out' | 'signed-in'
+  const [currentUser, setCurrentUser] = useState(null);
+
+  useEffect(() => {
+    const unsub = auth.onAuthStateChanged((user) => {
+      setCurrentUser(user);
+      setAuthState(user ? 'signed-in' : 'signed-out');
+    });
+    return unsub;
+  }, []);
+
+  if (authState === 'loading') {
+    return (
+      <div style={{ minHeight: '100vh', background: '#05080D', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8FAAC2', fontFamily: "'IBM Plex Sans', sans-serif" }}>
+        Yükleniyor…
+      </div>
+    );
+  }
+  if (authState === 'signed-out') {
+    return <LoginScreen />;
+  }
+  return <App currentUser={currentUser} onLogout={() => auth.signOut()} />;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<Root />);
 </script>
 </body>
 </html>
