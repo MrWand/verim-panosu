@@ -373,10 +373,9 @@ function estimateWithDecision(startMin, workMinutesNeeded, decision, dayIdx = 0)
   return { finishMin: normal.finishMin, mode: 'pending', needsDecision: true, label: '? Karar Bekliyor' };
 }
 
-function stageRequiredMinutes(standardHours, presentStaff, allowancePercent) {
+function stageRequiredMinutes(standardHours, presentStaff) {
   if (standardHours == null || !presentStaff || presentStaff <= 0) return null;
-  const inflated = (standardHours * 60) / (1 - (allowancePercent || 0) / 100);
-  return inflated / presentStaff;
+  return (standardHours * 60) / presentStaff;
 }
 
 function workMinutesBetween(startMin, endMin, blocks) {
@@ -1167,7 +1166,7 @@ function App({ currentUser, onLogout }) {
       const present = Math.max(totalStaff - absentStaff, 0);
       const cInfo = carryoverMap[st.id]?.[dayIndex];
       const effectiveStandard = cInfo ? cInfo.totalStandard : st.standardHours;
-      const neededMin = stageRequiredMinutes(effectiveStandard, present, allowancePercent);
+      const neededMin = stageRequiredMinutes(effectiveStandard, present);
       let finishMin = null, mode = 'normal', overMinutes = 0, needsDecision = false, label = '—';
       if (neededMin != null) { 
         const r = estimateWithDecision(startMin, neededMin, entry.overtimeDecision, dayIndex); 
@@ -1964,7 +1963,7 @@ function App({ currentUser, onLogout }) {
                   // 1. İş Teorik Bitiş Saati
                   const j1StartMin = timeToMin(entry.startTime) ?? SHIFT_START_MIN;
                   const j1Standard = cDay ? cDay.job1Standard : s.standardHours;
-                  const j1NeededMin = stageRequiredMinutes(j1Standard, presentStaff, allowancePercent);
+                  const j1NeededMin = stageRequiredMinutes(j1Standard, presentStaff);
                   const j1Est = j1NeededMin != null ? estimateWithDecision(j1StartMin, j1NeededMin, entry.overtimeDecision, dayIndex) : null;
 
                   // 2. İş Teorik Bitiş Saati
@@ -1972,7 +1971,7 @@ function App({ currentUser, onLogout }) {
                   if (entry.hasSecondJob) {
                     const j2StartMin = timeToMin(entry.secondJobStartTime) ?? (timeToMin(entry.actualEndTime) || j1Est?.finishMin || SHIFT_START_MIN);
                     const j2Standard = parseFloat(entry.secondJobStandard) || s.standardHours || 0;
-                    const j2NeededMin = stageRequiredMinutes(j2Standard, presentStaff, allowancePercent);
+                    const j2NeededMin = stageRequiredMinutes(j2Standard, presentStaff);
                     j2Est = j2NeededMin != null ? estimateWithDecision(j2StartMin, j2NeededMin, entry.overtimeDecision, dayIndex) : null;
                   }
 
@@ -2408,14 +2407,26 @@ function App({ currentUser, onLogout }) {
                               ) : lossHours == null ? (
                                 <span style={{ color: C.dim }}>Bitiş saati girilmedi</span>
                               ) : lossHours > 0.05 ? (
-                                <span style={{ color: C.bad, fontWeight: 600 }}>Kayıp: {lossHours.toFixed(1)} a-s</span>
+                                <>
+                                  <span style={{ color: (lossPercent != null && lossPercent > allowancePercent) ? C.bad : C.copper, fontWeight: 600 }}>
+                                    Kayıp: {lossHours.toFixed(1)} a-s
+                                  </span>
+                                  {lossPercent != null && (
+                                    lossPercent > allowancePercent ? (
+                                      <span style={{ color: C.bad, fontWeight: 600 }}>
+                                        ⚠ %{lossPercent.toFixed(0)} kayıp payı (%{allowancePercent} mola payı aşıldı)
+                                      </span>
+                                    ) : (
+                                      <span style={{ color: C.copper, fontWeight: 500 }}>
+                                        ℹ %{lossPercent.toFixed(0)} kayıp (%{allowancePercent} mola/ihtiyaç payı dahilinde kabul edilebilir)
+                                      </span>
+                                    )
+                                  )}
+                                </>
                               ) : lossHours < -0.05 ? (
-                                <span style={{ color: C.good, fontWeight: 600 }}>Tasarruf: {(-lossHours).toFixed(1)} a-s (Standart altında tamamlandı)</span>
+                                <span style={{ color: C.good, fontWeight: 600 }}>✓ Tasarruf: {(-lossHours).toFixed(1)} a-s (Standart altında tamamlandı)</span>
                               ) : (
-                                <span style={{ color: C.good, fontWeight: 600 }}>Tam zamanında tamamlandı</span>
-                              )}
-                              {lossPercent != null && lossPercent > allowancePercent && (
-                                <span style={{ color: C.bad, fontWeight: 600 }}>⚠ %{lossPercent.toFixed(0)} kayıp payı (%{allowancePercent} aşıldı)</span>
+                                <span style={{ color: C.good, fontWeight: 600 }}>✓ Tam zamanında tamamlandı</span>
                               )}
                             </div>
                           )}
