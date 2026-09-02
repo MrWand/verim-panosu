@@ -105,6 +105,21 @@ const auth = window.__auth;
 const DAY_NAMES = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
 const MONTHS = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
 
+// ADIM 2: STANDART DURUŞ / KAYIP NEDENLERİ TANIMLARI (PARETO)
+const DOWNTIME_REASONS = [
+  { id: 'malzeme', label: '📦 Malzeme / Sac / Profil Bekleme', short: 'Malzeme Bekleme', color: '#F59E0B' },
+  { id: 'ariza', label: '⚙️ Fikstür / Kaynak Makinesi Arızası', short: 'Makine Arızası', color: '#EF4444' },
+  { id: 'vinc', label: '🏗️ Vinç / Taşıma / Lojistik Bekleme', short: 'Vinç Bekleme', color: '#8B5CF6' },
+  { id: 'kalite_resim', label: '📐 Teknik Resim / Kalite Onayı', short: 'Resim / Kalite', color: '#06B6D4' },
+  { id: 'personel', label: '👥 Personel Eksikliği / Devamsızlık', short: 'Personel Eksikliği', color: '#EC4899' },
+  { id: 'ayar', label: '🔧 İş Değişimi & Setup / Fikstür Ayarı', short: 'Setup / Ayar', color: '#3B82F6' },
+  { id: 'diger', label: '⚠️ Diğer Operasyonel Neden', short: 'Diğer Neden', color: '#64748B' },
+];
+
+function getDowntimeInfo(id) {
+  return DOWNTIME_REASONS.find(r => r.id === id) || null;
+}
+
 const THEMES = {
   light: {
     name: 'light',
@@ -170,6 +185,8 @@ const THEMES = {
     loginTabBg: '#F1F5F9',
     loginActiveTabBg: '#FFFFFF',
     loginActiveTabText: '#0067C0',
+    chartGrid: '#E2E8F0',
+    chartText: '#64748B',
   },
   dark: {
     name: 'dark',
@@ -235,6 +252,8 @@ const THEMES = {
     loginTabBg: '#0E1520',
     loginActiveTabBg: '#1E293B',
     loginActiveTabText: '#38BDF8',
+    chartGrid: '#233142',
+    chartText: '#94A3B8',
   }
 };
 
@@ -409,7 +428,7 @@ function effColor(eff, C) {
 }
 
 function hasAnyInput(e) {
-  return !!(e && (e.isIdle || e.wagonNo || e.secondJobWagonNo || e.actual || e.secondJobActual || e.totalStaff || e.absentStaff || e.target || e.produced || e.startTime || e.actualEndTime));
+  return !!(e && (e.isIdle || e.wagonNo || e.secondJobWagonNo || e.actual || e.secondJobActual || e.totalStaff || e.absentStaff || e.target || e.produced || e.startTime || e.actualEndTime || e.downtimeReason));
 }
 
 function DimensionBar({ eff, height = 10 }) {
@@ -446,6 +465,228 @@ function GroupTag({ group }) {
 function usernameToEmail(username) {
   const clean = (username || '').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '');
   return `${clean || 'kullanici'}@verim-panosu.local`;
+}
+
+// ADIM 1: VAGON DETAY & SÜREÇ MODALI
+function WagonDetailModal({ wagon, onClose }) {
+  const { C } = useTheme();
+  if (!wagon) return null;
+
+  return (
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: C.modalOverlay, backdropFilter: 'blur(5px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{ background: C.modalCardBg, border: `1px solid ${C.border}`, borderRadius: 12, width: '100%', maxWidth: 680, maxHeight: '90vh', overflowY: 'auto', padding: 24, boxShadow: C.cardShadow }}>
+        
+        {/* Modal Başlığı */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, borderBottom: `1px solid ${C.border}`, paddingBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 8, background: 'linear-gradient(135deg, #0078D4, #005A9E)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 18 }}>🚆</div>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: C.paper }}>Vagon: #{wagon.wagonNo}</div>
+              <div style={{ fontSize: 12, color: C.dim }}>Haftalık Üretim & Hat Süreci Yolculuğu</div>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: C.panelAlt, border: `1px solid ${C.border}`, borderRadius: '50%', width: 28, height: 28, color: C.dim, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+        </div>
+
+        {/* Özet Kartları */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginBottom: 20 }}>
+          <div style={{ background: C.panelAlt, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px' }}>
+            <div style={{ fontSize: 11, color: C.dim, textTransform: 'uppercase', fontWeight: 600 }}>Toplam Harcanan</div>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 18, fontWeight: 700, color: C.paper, marginTop: 4 }}>
+              {wagon.totalActual.toFixed(1)} <span style={{ fontSize: 11, color: C.dim }}>a-s</span>
+            </div>
+          </div>
+          <div style={{ background: C.panelAlt, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px' }}>
+            <div style={{ fontSize: 11, color: C.dim, textTransform: 'uppercase', fontWeight: 600 }}>Toplam Hedef</div>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 18, fontWeight: 700, color: C.line, marginTop: 4 }}>
+              {wagon.totalStandard > 0 ? `${wagon.totalStandard.toFixed(1)} a-s` : '—'}
+            </div>
+          </div>
+          <div style={{ background: C.panelAlt, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px' }}>
+            <div style={{ fontSize: 11, color: C.dim, textTransform: 'uppercase', fontWeight: 600 }}>Ortalama Verim</div>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 18, fontWeight: 700, color: effColor(wagon.overallEff, C), marginTop: 4 }}>
+              {wagon.overallEff != null ? `${Math.round(wagon.overallEff)}%` : '—'}
+            </div>
+          </div>
+          <div style={{ background: C.panelAlt, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px' }}>
+            <div style={{ fontSize: 11, color: C.dim, textTransform: 'uppercase', fontWeight: 600 }}>Uğradığı İstasyon</div>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 18, fontWeight: 700, color: C.copper, marginTop: 4 }}>
+              {wagon.stationsCount} <span style={{ fontSize: 11, color: C.dim }}>istasyon</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Kronolojik Süreç Adımları (Timeline Stepper) */}
+        <div style={{ fontSize: 12, fontWeight: 700, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>
+          İstasyon Bazlı Süreç ve İşlemler
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {wagon.steps.map((step, idx) => {
+            const dtInfo = getDowntimeInfo(step.downtimeReason);
+            return (
+              <div key={idx} style={{ background: C.panelAlt, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 22, height: 22, borderRadius: '50%', background: step.isDone ? C.good : C.copper, color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {idx + 1}
+                    </div>
+                    <span style={{ fontWeight: 600, fontSize: 13.5, color: C.paper }}>{step.stationName}</span>
+                    <GroupTag group={step.group} />
+                    <span style={{ fontSize: 11, color: C.dim, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, padding: '2px 6px' }}>{step.jobName}</span>
+                  </div>
+
+                  <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 4, background: step.isDone ? C.successBadgeBg : C.warningBadgeBg, color: step.isDone ? C.good : C.copper, border: `1px solid ${step.isDone ? C.successBadgeBorder : C.warningBadgeBorder}` }}>
+                    {step.isDone ? '✓ Tamamlandı' : '⏳ Devam Ediyor'}
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, fontSize: 12, color: C.dim, borderTop: `1px solid ${C.border}`, paddingTop: 8 }}>
+                  <div>
+                    📅 <strong>{step.day}</strong> ({step.dateStr})
+                    {step.startTime && step.endTime && ` · Saat: ${step.startTime} - ${step.endTime}`}
+                  </div>
+                  <div style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                    Harcanan: <strong style={{ color: C.paper }}>{step.actual.toFixed(1)} a-s</strong> 
+                    {step.standard != null && ` / Hedef: ${step.standard.toFixed(1)} a-s`}
+                  </div>
+                </div>
+
+                {dtInfo && (
+                  <div style={{ fontSize: 11, padding: '4px 8px', borderRadius: 4, background: `${dtInfo.color}15`, border: `1px solid ${dtInfo.color}44`, color: dtInfo.color, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span>Duruş / Kayıp Nedeni:</span>
+                    <span>{dtInfo.label}</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ marginTop: 20, textAlign: 'right' }}>
+          <button onClick={onClose} style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 6, color: C.paper, padding: '7px 16px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+            Kapat
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ADIM 4: YÖNETİCİ GRAFİKLERİ VE KPI BİLEŞENLERİ (SVG REAKTİF)
+function TrendChart({ weekDates, data, carryoverMap, stations }) {
+  const { C } = useTheme();
+
+  // Her gün için ortalama verim hesaplama
+  const dailyEffs = useMemo(() => {
+    return weekDates.map((d, i) => {
+      let sum = 0, count = 0;
+      stations.filter(s => s.active !== false).forEach(s => {
+        const e = data.entries[`${dateKey(d)}|${s.id}`];
+        if (!e || e.isIdle) return;
+        const act = (parseFloat(e.actual) || 0) + (e.hasSecondJob ? (parseFloat(e.secondJobActual) || 0) : 0);
+        const cInfo = carryoverMap[s.id]?.[i];
+        const std = cInfo ? cInfo.totalStandard : s.standardHours;
+        const eff = calcEff(act, std);
+        if (eff !== null) { sum += eff; count += 1; }
+      });
+      return count > 0 ? Math.round(sum / count) : 0;
+    });
+  }, [weekDates, data, carryoverMap, stations]);
+
+  const maxVal = Math.max(120, ...dailyEffs);
+  const chartHeight = 160;
+
+  return (
+    <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 18, boxShadow: C.cardShadow }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: C.paper }}>📈 Günlük Verim Trendi (%)</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 11, color: C.dim }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 10, background: C.line, borderRadius: 2 }} /> Gerçekleşen</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 2, background: C.good }} /> %100 Hedef</span>
+        </div>
+      </div>
+
+      <svg width="100%" height={chartHeight} viewBox={`0 0 500 ${chartHeight}`} style={{ overflow: 'visible' }}>
+        {/* Kılavuz Çizgileri */}
+        <line x1="40" y1="30" x2="490" y2="30" stroke={C.chartGrid} strokeDasharray="3 3" />
+        <text x="32" y="34" fill={C.chartText} fontSize="10" textAnchor="end">100%</text>
+
+        <line x1="40" y1="85" x2="490" y2="85" stroke={C.chartGrid} strokeDasharray="3 3" />
+        <text x="32" y="89" fill={C.chartText} fontSize="10" textAnchor="end">50%</text>
+
+        <line x1="40" y1="135" x2="490" y2="135" stroke={C.border} />
+        <text x="32" y="139" fill={C.chartText} fontSize="10" textAnchor="end">0%</text>
+
+        {/* 100% Hedef Çizgisi */}
+        {(() => {
+          const targetY = 135 - (100 / maxVal) * 105;
+          return <line x1="40" y1={targetY} x2="490" y2={targetY} stroke={C.good} strokeWidth="1.5" strokeDasharray="4 4" />;
+        })()}
+
+        {/* Çubuklar */}
+        {dailyEffs.map((val, idx) => {
+          const x = 70 + idx * 60;
+          const barHeight = val > 0 ? (val / maxVal) * 105 : 2;
+          const y = 135 - barHeight;
+          const barColor = val >= 90 ? C.good : (val >= 70 ? C.copper : (val > 0 ? C.bad : C.dim));
+
+          return (
+            <g key={idx}>
+              <rect x={x - 16} y={y} width="32" height={barHeight} rx="4" fill={barColor} opacity="0.88" />
+              <text x={x} y={y - 5} fill={C.paper} fontSize="11" fontWeight="700" textAnchor="middle">
+                {val > 0 ? `${val}%` : '—'}
+              </text>
+              <text x={x} y="152" fill={C.dim} fontSize="11" fontWeight="600" textAnchor="middle">
+                {DAY_NAMES[idx]}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function ParetoChart({ downtimeSummary }) {
+  const { C } = useTheme();
+  const { list, totalDowntimeHours } = downtimeSummary;
+
+  return (
+    <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 18, boxShadow: C.cardShadow }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: C.paper }}>📉 Duruş / Kayıp Nedenleri Dağılımı (Pareto)</span>
+        <span style={{ fontSize: 11.5, color: C.bad, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>
+          Toplam: {totalDowntimeHours.toFixed(1)} a-s kayıp
+        </span>
+      </div>
+
+      {list.length === 0 ? (
+        <div style={{ padding: '24px 0', textAlign: 'center', color: C.good, fontSize: 13, fontWeight: 500 }}>
+          ✓ Bu hafta kaydedilmiş duruş veya gecikme nedeni bulunmuyor.
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {list.map((item) => (
+            <div key={item.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                <span style={{ fontWeight: 600, color: C.paper, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span>{item.label}</span>
+                  <span style={{ fontSize: 10.5, color: C.dim }}>({item.count} olay)</span>
+                </span>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: item.color }}>
+                  {item.hours.toFixed(1)} a-s <span style={{ fontSize: 11, color: C.dim }}>({Math.round(item.percent)}%)</span>
+                </span>
+              </div>
+              <div style={{ position: 'relative', height: 8, background: C.trackBg, borderRadius: 4, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${Math.min(item.percent, 100)}%`, background: item.color, borderRadius: 4, transition: 'width 0.4s ease' }} />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function LoginScreen() {
@@ -488,7 +729,6 @@ function LoginScreen() {
 
   return (
     <div style={{ minHeight: '100vh', background: C.loginBg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, position: 'relative' }}>
-      {/* Giriş ekranında tema değiştirici buton */}
       <button
         type="button"
         onClick={toggleTheme}
@@ -556,8 +796,14 @@ function App({ currentUser, onLogout }) {
   const [showInactiveStations, setShowInactiveStations] = useState(false);
   const [showWeekendModal, setShowWeekendModal] = useState(false);
   const [lastEdit, setLastEdit] = useState(null);
+  
+  // YENİ ÖZELLİKLER İÇİN DURUM (STATE) DEĞİŞKENLERİ
+  const [mainView, setMainView] = useState('dashboard'); // 'dashboard' | 'wagons' | 'analytics'
+  const [selectedWagonDetail, setSelectedWagonDetail] = useState(null);
+  const [wagonSearchQuery, setWagonSearchQuery] = useState('');
+  const [wagonStatusFilter, setWagonStatusFilter] = useState('all'); // 'all' | 'in_progress' | 'completed'
+  
   const pendingWrites = useRef({});
-
   const username = currentUser?.displayName || currentUser?.email || 'Bilinmeyen';
 
   function recordActivity() {
@@ -983,7 +1229,8 @@ function App({ currentUser, onLogout }) {
                 job: '1. İş',
                 status: e.job1Status === 'in_progress' ? 'Devam Ediyor' : (e.actualEndTime ? 'Tamamlandı' : 'Başlandı'),
                 actual: parseFloat(e.actual) || 0,
-                remainder: cInfo?.job1Remainder || 0
+                remainder: cInfo?.job1Remainder || 0,
+                downtimeReason: e.downtimeReason
               });
             }
             if (e.hasSecondJob) {
@@ -995,7 +1242,8 @@ function App({ currentUser, onLogout }) {
                   job: '2. İş',
                   status: e.secondJobStatus === 'in_progress' ? 'Devam Ediyor' : (e.secondJobActualEndTime ? 'Tamamlandı' : 'Başlandı'),
                   actual: parseFloat(e.secondJobActual) || 0,
-                  remainder: cInfo?.job2Remainder || 0
+                  remainder: cInfo?.job2Remainder || 0,
+                  downtimeReason: e.downtimeReason
                 });
               }
             }
@@ -1029,6 +1277,175 @@ function App({ currentUser, onLogout }) {
   const absenteeismTotal = useMemo(() => stationSummaries.filter((s) => s.active !== false).reduce((acc, s) => ({ persons: acc.persons + s.totalAbsent, hours: acc.hours + s.totalLost }), { persons: 0, hours: 0 }), [stationSummaries]);
   const lossTotal = useMemo(() => stationSummaries.filter((s) => s.active !== false).reduce((acc, s) => acc + (s.lossTotal != null && s.lossTotal > 0 ? s.lossTotal : 0), 0), [stationSummaries]);
 
+  // ADIM 2: DURUŞ VE KAYIP NEDENLERİ HAFTALIK ÖZETİ (PARETO)
+  const downtimeSummary = useMemo(() => {
+    const stats = {};
+    DOWNTIME_REASONS.forEach(r => {
+      stats[r.id] = { ...r, hours: 0, count: 0, stations: new Set() };
+    });
+    let totalDowntimeHours = 0;
+
+    weekDates.forEach((d, i) => {
+      data.stations.filter(s => s.active !== false).forEach(s => {
+        const e = data.entries[`${dateKey(d)}|${s.id}`];
+        if (!e || e.isIdle) return;
+        const reasonId = e.downtimeReason;
+        if (!reasonId || !stats[reasonId]) return;
+
+        const cInfo = carryoverMap[s.id]?.[i];
+        const act = (parseFloat(e.actual) || 0) + (e.hasSecondJob ? (parseFloat(e.secondJobActual) || 0) : 0);
+        const std = cInfo ? cInfo.totalStandard : s.standardHours;
+        const loss = (std != null && act > std) ? (act - std) : (e.job1Status === 'in_progress' ? (cInfo?.job1Remainder || 0) : 0);
+        
+        const lossEffective = loss > 0.05 ? loss : 1.0;
+        stats[reasonId].hours += lossEffective;
+        stats[reasonId].count += 1;
+        stats[reasonId].stations.add(s.name);
+        totalDowntimeHours += lossEffective;
+      });
+    });
+
+    const list = Object.values(stats)
+      .filter(s => s.count > 0)
+      .map(s => ({
+        ...s,
+        percent: totalDowntimeHours > 0 ? (s.hours / totalDowntimeHours) * 100 : 0,
+        stationsList: Array.from(s.stations)
+      }))
+      .sort((a, b) => b.hours - a.hours);
+
+    return { list, totalDowntimeHours };
+  }, [data, weekDates, carryoverMap]);
+
+  // ADIM 1: TÜM VAGONLARIN HAFTALIK YAŞAM DÖNGÜSÜ KATALOĞU (WAGON MATRIX)
+  const wagonsCatalog = useMemo(() => {
+    const map = {};
+
+    weekDates.forEach((d, i) => {
+      const dayName = DAY_NAMES[i];
+      const dFormatted = `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+      const dKey = dateKey(d);
+
+      data.stations.filter(s => s.active !== false).forEach(s => {
+        const e = data.entries[`${dKey}|${s.id}`];
+        if (!e || e.isIdle) return;
+        const cInfo = carryoverMap[s.id]?.[i];
+
+        // 1. İş Vagonu
+        const w1 = (e.wagonNo || cInfo?.job1WagonNo || '').trim();
+        if (w1) {
+          if (!map[w1]) {
+            map[w1] = {
+              wagonNo: w1,
+              steps: [],
+              totalActual: 0,
+              totalStandard: 0,
+              firstDay: dayName,
+              latestStatus: 'İşlemde',
+              stationsSet: new Set()
+            };
+          }
+          const j1Act = parseFloat(e.actual) || 0;
+          const j1Std = cInfo ? cInfo.job1Standard : s.standardHours;
+          const isDone = (e.job1Status !== 'in_progress') && (e.actualEndTime != null);
+          const j1StatusText = e.job1Status === 'in_progress' ? 'Devam Ediyor' : (isDone ? 'Tamamlandı' : 'Başlandı');
+          
+          map[w1].steps.push({
+            day: dayName,
+            dateStr: dFormatted,
+            stationId: s.id,
+            stationName: s.name,
+            group: s.group,
+            jobName: '1. İş',
+            standard: j1Std,
+            actual: j1Act,
+            startTime: e.startTime,
+            endTime: e.actualEndTime,
+            status: j1StatusText,
+            isDone,
+            downtimeReason: e.downtimeReason
+          });
+          map[w1].totalActual += j1Act;
+          if (j1Std != null) map[w1].totalStandard += j1Std;
+          map[w1].latestStatus = j1StatusText;
+          map[w1].stationsSet.add(s.name);
+        }
+
+        // 2. İş Vagonu
+        if (e.hasSecondJob) {
+          const w2 = (e.secondJobWagonNo || w1).trim();
+          if (w2) {
+            if (!map[w2]) {
+              map[w2] = {
+                wagonNo: w2,
+                steps: [],
+                totalActual: 0,
+                totalStandard: 0,
+                firstDay: dayName,
+                latestStatus: 'İşlemde',
+                stationsSet: new Set()
+              };
+            }
+            const j2Act = parseFloat(e.secondJobActual) || 0;
+            const j2Std = parseFloat(e.secondJobStandard) || s.standardHours;
+            const isDone2 = (e.secondJobStatus !== 'in_progress') && (e.secondJobActualEndTime != null);
+            const j2StatusText = e.secondJobStatus === 'in_progress' ? 'Devam Ediyor' : (isDone2 ? 'Tamamlandı' : 'Başlandı');
+
+            map[w2].steps.push({
+              day: dayName,
+              dateStr: dFormatted,
+              stationId: s.id,
+              stationName: s.name,
+              group: s.group,
+              jobName: '2. İş',
+              standard: j2Std,
+              actual: j2Act,
+              startTime: e.secondJobStartTime,
+              endTime: e.secondJobActualEndTime,
+              status: j2StatusText,
+              isDone: isDone2,
+              downtimeReason: e.downtimeReason
+            });
+            map[w2].totalActual += j2Act;
+            if (j2Std != null) map[w2].totalStandard += j2Std;
+            map[w2].latestStatus = j2StatusText;
+            map[w2].stationsSet.add(s.name);
+          }
+        }
+      });
+    });
+
+    return Object.values(map).map(w => {
+      const overallEff = calcEff(w.totalActual, w.totalStandard);
+      return {
+        ...w,
+        stationsCount: w.stationsSet.size,
+        stationsList: Array.from(w.stationsSet),
+        overallEff
+      };
+    }).sort((a, b) => a.wagonNo.localeCompare(b.wagonNo, undefined, { numeric: true }));
+  }, [data, weekDates, carryoverMap]);
+
+  // Filtrelenmiş Vagon Listesi (Arama ve Duruma göre)
+  const filteredWagons = useMemo(() => {
+    return wagonsCatalog.filter(w => {
+      const matchesSearch = !wagonSearchQuery.trim() || w.wagonNo.toLowerCase().includes(wagonSearchQuery.trim().toLowerCase()) || w.stationsList.some(st => st.toLowerCase().includes(wagonSearchQuery.trim().toLowerCase()));
+      const matchesStatus = wagonStatusFilter === 'all' ? true : (wagonStatusFilter === 'completed' ? w.latestStatus === 'Tamamlandı' : w.latestStatus !== 'Tamamlandı');
+      return matchesSearch && matchesStatus;
+    });
+  }, [wagonsCatalog, wagonSearchQuery, wagonStatusFilter]);
+
+  // Seçili vagon detay nesnesi
+  const currentWagonDetailObj = useMemo(() => {
+    if (!selectedWagonDetail) return null;
+    return wagonsCatalog.find(w => w.wagonNo === selectedWagonDetail) || null;
+  }, [wagonsCatalog, selectedWagonDetail]);
+
+  // ADIM 4: HAFTANIN EN BAŞARILI 3 İSTASYONU (YILDIZLAR)
+  const topStations = useMemo(() => {
+    return stationSummaries.filter(s => s.active !== false && s.avg !== null).slice(0, 3);
+  }, [stationSummaries]);
+
   function printReport() {
     const rangeLabel = formatRange(weekStart);
     const rows = stationSummaries.filter(s => s.active !== false).map((s) => {
@@ -1039,10 +1456,12 @@ function App({ currentUser, onLogout }) {
           const isDone = lastJob.status === 'Tamamlandı';
           const badgeColor = isDone ? '#059669' : '#d97706';
           const badgeIcon = isDone ? '✓' : '⏳';
-          return `<div style="margin-bottom:2px">
+          const dt = getDowntimeInfo(lastJob.downtimeReason);
+          return `<div style="margin-bottom:3px">
             <span style="font-weight:700;color:#0284c7">#${w.name}</span>: 
             <span style="color:${badgeColor};font-weight:600;font-size:11px">${badgeIcon} ${lastJob.status}</span> 
             <span style="color:#64748B;font-size:10px">(${lastJob.day} - ${lastJob.job})</span>
+            ${dt ? `<span style="font-size:10px;color:${dt.color};display:inline-block;margin-left:4px">[${dt.short}]</span>` : ''}
           </div>`;
         }).join('');
       }
@@ -1060,6 +1479,8 @@ function App({ currentUser, onLogout }) {
         <td style="text-align:right;font-weight:700">${s.avg === null ? (s.idleDays > 0 ? '<span style="color:#64748B">Planlı Boşta</span>' : '—') : Math.round(s.avg) + '%'}</td>
       </tr>`;
     }).join('');
+
+    const downtimeRows = downtimeSummary.list.map((d) => `<li><strong>${d.label}:</strong> ${d.hours.toFixed(1)} a-s (%${Math.round(d.percent)}) — Etkilenen istasyonlar: ${d.stationsList.join(', ')}</li>`).join('');
     const overtimeRows = overtimeStations.map((s) => `<li>${s.name}: ≈${s.totalCapacityShortfall.toFixed(1)} adam-saat kapasite açığı${s.avgPresent > 0 ? ` · ≈${(s.totalCapacityShortfall / s.avgPresent).toFixed(1)} saat/kişi ek mesai` : ''}</li>`).join('');
     const allowanceBreaches = stationSummaries.filter((s) => s.lossPercentAvg != null && s.lossPercentAvg > allowancePercent);
     const allowanceRows = allowanceBreaches.map((s) => `<li>${s.name}: kayıp oranı %${s.lossPercentAvg.toFixed(0)} (izin verilen %${allowancePercent})</li>`).join('');
@@ -1091,6 +1512,8 @@ function App({ currentUser, onLogout }) {
         <div class="box">Kaynak-Montaj toplamı<b>${groupTotals.kaynakmontaj.actual.toFixed(1)} a-s</b></div>
         <div class="box">Haftalık ortalama verim<b>${weekAvg === null ? '—' : Math.round(weekAvg) + '%'}</b></div>
       </div>
+      <h3>Duruş / Kayıp Nedenleri Analizi (Pareto)</h3>
+      ${downtimeSummary.list.length > 0 ? `<ul>${downtimeRows}</ul>` : '<p style="font-size:13px">Bu hafta duruş/gecikme nedeni kaydedilmemiş.</p>'}
       <h3>Devamsızlık etkisi</h3>
       <p style="font-size:13px">Toplam ${absenteeismTotal.persons} kişi-gün devamsızlık, ${absenteeismTotal.hours.toFixed(1)} adam-saat kayıp.</p>
       <h3>Ek mesai gerekebilecek istasyonlar</h3>
@@ -1105,7 +1528,7 @@ function App({ currentUser, onLogout }) {
   }
 
   function exportCSV() {
-    const header = ['Tarih', 'İstasyon', 'Grup', 'Durum', '1. İş Vagon No', '1. İş Durumu', '1. İş Başlangıç', '1. İş Bitiş', '1. İş Standart (a-s)', '1. İş Gerçekleşen (a-s)', '2. İş Vagon No', '2. İş Durumu', '2. İş Başlangıç', '2. İş Bitiş', '2. İş Standart (a-s)', '2. İş Gerçekleşen (a-s)', 'Toplam Standart', 'Toplam Gerçekleşen', 'Personel', 'Devamsız', 'Verim (%)'];
+    const header = ['Tarih', 'İstasyon', 'Grup', 'Durum', '1. İş Vagon No', '1. İş Durumu', '1. İş Başlangıç', '1. İş Bitiş', '1. İş Standart (a-s)', '1. İş Gerçekleşen (a-s)', '2. İş Vagon No', '2. İş Durumu', '2. İş Başlangıç', '2. İş Bitiş', '2. İş Standart (a-s)', '2. İş Gerçekleşen (a-s)', 'Toplam Standart', 'Toplam Gerçekleşen', 'Personel', 'Devamsız', 'Duruş Nedeni', 'Verim (%)'];
     const lines = [header.join(';')];
     weekDates.forEach((d) => {
       const dKey = dateKey(d);
@@ -1113,7 +1536,7 @@ function App({ currentUser, onLogout }) {
         const e = data.entries[`${dKey}|${s.id}`];
         if (!hasAnyInput(e)) return;
         if (e.isIdle) {
-          lines.push([dKey, s.name, GROUP_LABEL[s.group], 'Planlı Boşta', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''].join(';'));
+          lines.push([dKey, s.name, GROUP_LABEL[s.group], 'Planlı Boşta', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''].join(';'));
           return;
         }
         const cDay = carryoverMap[s.id]?.find((_, idx) => weekDates[idx].getTime() === d.getTime());
@@ -1125,6 +1548,7 @@ function App({ currentUser, onLogout }) {
         const j1Status = e.job1Status === 'in_progress' ? 'Devam Ediyor' : (e.actualEndTime ? 'Tamamlandı' : 'Başlandı');
         const w2 = e.hasSecondJob ? ((e.secondJobWagonNo || w1).trim()) : '';
         const j2Status = e.hasSecondJob ? (e.secondJobStatus === 'in_progress' ? 'Devam Ediyor' : (e.secondJobActualEndTime ? 'Tamamlandı' : 'Başlandı')) : '';
+        const dt = getDowntimeInfo(e.downtimeReason);
 
         lines.push([
           dKey, 
@@ -1147,6 +1571,7 @@ function App({ currentUser, onLogout }) {
           act > 0 ? act.toFixed(1) : '',
           e.totalStaff || '', 
           e.absentStaff || '', 
+          dt ? dt.short : '',
           eff === null ? '' : Math.round(eff)
         ].join(';'));
       });
@@ -1164,8 +1589,8 @@ function App({ currentUser, onLogout }) {
   }, [data.stations, showInactiveStations]);
 
   return (
-    <div style={{ minHeight: '100vh', padding: '24px 16px 56px' }}>
-      <div style={{ maxWidth: 980, margin: '0 auto' }}>
+    <div style={{ minHeight: '100vh', padding: '20px 16px 56px' }}>
+      <div style={{ maxWidth: 1040, margin: '0 auto' }}>
 
         {/* Ust Baslik Blogu */}
         <div style={{ border: `1px solid ${C.border}`, background: C.panel, borderRadius: 10, marginBottom: 16, display: 'flex', flexWrap: 'wrap', overflow: 'hidden', boxShadow: C.cardShadow }}>
@@ -1184,9 +1609,9 @@ function App({ currentUser, onLogout }) {
             <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: C.paper }}>{Math.floor(NET_SHIFT_MIN / 60)}s {NET_SHIFT_MIN % 60}dk</div>
             <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>Haftaiçi & Haftasonu</div>
           </TitleCell>
-          <TitleCell label="Mola Payı" minWidth={120}>
+          <TitleCell label="Mola Payı" minWidth={110}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input type="number" step="1" min="0" max="100" className="num-input num-input-sm" style={{ width: 48 }} value={data.settings?.allowancePercent ?? 10} onChange={(e) => updateSettings('allowancePercent', e.target.value)} />
+              <input type="number" step="1" min="0" max="100" className="num-input num-input-sm" style={{ width: 46 }} value={data.settings?.allowancePercent ?? 10} onChange={(e) => updateSettings('allowancePercent', e.target.value)} />
               <span style={{ fontSize: 12, color: C.dim }}>%</span>
             </div>
           </TitleCell>
@@ -1204,7 +1629,7 @@ function App({ currentUser, onLogout }) {
           </div>
         </div>
 
-        {/* Kullanici Bilgisi, Cikis, Tema Degistir & Haftasonu Mesaisi Butonu */}
+        {/* Kullanici Bilgisi, Hızlı Vagon Arama, Tema Degistir & Haftasonu Mesaisi */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 16, fontSize: 12, color: C.dim }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <span>Kullanıcı: <strong style={{ color: C.paper }}>{username}</strong></span>
@@ -1213,7 +1638,33 @@ function App({ currentUser, onLogout }) {
             )}
           </div>
           
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {/* HIZLI VAGON ARAMA ALANI (ADIM 1) */}
+            <div style={{ position: 'relative' }}>
+              <input
+                type="text"
+                placeholder="🔍 Vagon Ara (örn. V-101)..."
+                value={wagonSearchQuery}
+                onChange={(e) => {
+                  setWagonSearchQuery(e.target.value);
+                  if (e.target.value && mainView !== 'wagons') setMainView('wagons');
+                }}
+                style={{
+                  background: C.panel,
+                  border: `1px solid ${C.border}`,
+                  borderRadius: 6,
+                  color: C.paper,
+                  padding: '6px 10px',
+                  fontSize: 12,
+                  width: 170,
+                  boxShadow: C.cardShadow
+                }}
+              />
+              {wagonSearchQuery && (
+                <button onClick={() => setWagonSearchQuery('')} style={{ position: 'absolute', right: 6, top: 7, background: 'transparent', border: 'none', color: C.dim, cursor: 'pointer', fontSize: 11 }}>✕</button>
+              )}
+            </div>
+
             {/* TEMA DEĞİŞTİRME BUTONU (LIGHT / DARK) */}
             <button
               onClick={toggleTheme}
@@ -1234,7 +1685,7 @@ function App({ currentUser, onLogout }) {
               title={theme === 'light' ? 'Koyu Moda Geç' : 'Açık Moda Geç'}
             >
               <span>{theme === 'light' ? '🌙' : '☀️'}</span>
-              <span>{theme === 'light' ? 'Koyu Mod' : 'Açık Mod'}</span>
+              <span>{theme === 'light' ? 'Koyu' : 'Açık'}</span>
             </button>
 
             <button 
@@ -1254,10 +1705,82 @@ function App({ currentUser, onLogout }) {
                 boxShadow: C.cardShadow
               }}
             >
-              <span>🛠️</span> Haftasonu Mesaisi (Cmt / Paz)
+              <span>🛠️</span> Haftasonu
             </button>
-            <button onClick={() => auth.signOut()} style={{ background: C.headerBtnBg, border: `1px solid ${C.border}`, borderRadius: 6, color: C.dim, padding: '5px 12px', fontSize: 11.5, cursor: 'pointer' }}>Çıkış Yap</button>
+            <button onClick={() => auth.signOut()} style={{ background: C.headerBtnBg, border: `1px solid ${C.border}`, borderRadius: 6, color: C.dim, padding: '5px 12px', fontSize: 11.5, cursor: 'pointer' }}>Çıkış</button>
           </div>
+        </div>
+
+        {/* ANA GÖRÜNÜM SEÇİCİ SEKMELERİ (DASHBOARD / WAGONS / ANALYTICS) */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 18, background: C.tabStripBg, padding: 4, borderRadius: 10, border: `1px solid ${C.border}` }}>
+          <button
+            onClick={() => setMainView('dashboard')}
+            style={{
+              flex: 1,
+              padding: '9px 12px',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              borderRadius: 7,
+              background: mainView === 'dashboard' ? C.tabActiveBg : 'transparent',
+              border: mainView === 'dashboard' ? `1px solid ${C.border}` : 'none',
+              color: mainView === 'dashboard' ? C.paper : C.dim,
+              boxShadow: mainView === 'dashboard' ? C.cardShadow : 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 7,
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <span>📋</span> Günlük İstasyon Panosu
+          </button>
+
+          <button
+            onClick={() => setMainView('wagons')}
+            style={{
+              flex: 1,
+              padding: '9px 12px',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              borderRadius: 7,
+              background: mainView === 'wagons' ? C.tabActiveBg : 'transparent',
+              border: mainView === 'wagons' ? `1px solid ${C.border}` : 'none',
+              color: mainView === 'wagons' ? C.paper : C.dim,
+              boxShadow: mainView === 'wagons' ? C.cardShadow : 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 7,
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <span>🚆</span> Vagon İzleme Matrisi ({wagonsCatalog.length})
+          </button>
+
+          <button
+            onClick={() => setMainView('analytics')}
+            style={{
+              flex: 1,
+              padding: '9px 12px',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              borderRadius: 7,
+              background: mainView === 'analytics' ? C.tabActiveBg : 'transparent',
+              border: mainView === 'analytics' ? `1px solid ${C.border}` : 'none',
+              color: mainView === 'analytics' ? C.paper : C.dim,
+              boxShadow: mainView === 'analytics' ? C.cardShadow : 'none',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 7,
+              transition: 'all 0.15s ease'
+            }}
+          >
+            <span>📊</span> Yönetici Grafikleri & KPI
+          </button>
         </div>
 
         {/* HAFTASONU MESAİSİ BİLGİLENDİRME & HIZLI ERİŞİM MODALI */}
@@ -1285,13 +1808,13 @@ function App({ currentUser, onLogout }) {
 
               <div style={{ display: 'flex', gap: 8 }}>
                 <button
-                  onClick={() => { setDayIndex(5); setShowWeekendModal(false); }}
+                  onClick={() => { setDayIndex(5); setMainView('dashboard'); setShowWeekendModal(false); }}
                   style={{ flex: 1, padding: '10px 0', background: theme === 'light' ? '#EEF2FF' : 'rgba(129, 140, 248, 0.15)', border: `1px solid ${C.weekend}`, color: C.weekend, borderRadius: 6, fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }}
                 >
                   📅 Cumartesi Girişlerine Git
                 </button>
                 <button
-                  onClick={() => { setDayIndex(6); setShowWeekendModal(false); }}
+                  onClick={() => { setDayIndex(6); setMainView('dashboard'); setShowWeekendModal(false); }}
                   style={{ flex: 1, padding: '10px 0', background: theme === 'light' ? '#EEF2FF' : 'rgba(129, 140, 248, 0.15)', border: `1px solid ${C.weekend}`, color: C.weekend, borderRadius: 6, fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }}
                 >
                   📅 Pazar Girişlerine Git
@@ -1301,750 +1824,1042 @@ function App({ currentUser, onLogout }) {
           </div>
         )}
 
-        {/* Istasyon Yonetimi */}
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.5 }}>İstasyon Tanımları & Standart Saatler</span>
-            <button 
-              onClick={() => setShowInactiveStations(!showInactiveStations)} 
-              style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 6, color: showInactiveStations ? C.good : C.dim, fontSize: 11.5, padding: '4px 10px', cursor: 'pointer', fontWeight: 500 }}>
-              {showInactiveStations ? '✓ Pasifler Gösteriliyor' : '+ Pasif İstasyonları Göster'}
-            </button>
-          </div>
-          <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, boxShadow: C.cardShadow }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
-              {displayedStations.map((s) => (
-                <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: s.active === false ? (theme === 'light' ? '#F1F5F9' : '#0B0F17') : C.panelAlt, border: `1px solid ${C.border}`, borderRadius: 6, padding: '7px 10px', opacity: s.active === false ? 0.6 : 1 }}>
-                  <GroupTag group={s.group} />
-                  <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: s.active === false ? C.dim : C.paper }}>
-                    {s.name} {s.active === false && <span style={{ fontSize: 11, color: C.bad }}>(Pasif)</span>}
-                  </span>
-                  <input
-                    type="number" min="0" step="0.5" placeholder="a-s"
-                    className="num-input num-input-sm" style={{ width: 75 }}
-                    value={s.standardHours ?? ''}
-                    onChange={(e) => updateStationField(s.id, 'standardHours', e.target.value === '' ? null : parseFloat(e.target.value))}
-                  />
-                  <button 
-                    onClick={() => toggleStationActive(s.id, s.active !== false)} 
-                    style={{ background: s.active === false ? C.dangerBadgeBg : C.successBadgeBg, border: `1px solid ${s.active === false ? C.dangerBadgeBorder : C.successBadgeBorder}`, color: s.active === false ? C.bad : C.good, cursor: 'pointer', padding: '4px 10px', fontSize: 11, fontWeight: 600, borderRadius: 4 }}
-                  >
-                    {s.active === false ? 'Pasif' : 'Aktif'}
-                  </button>
-                  <button onClick={() => removeStation(s.id)} style={{ background: 'transparent', border: 'none', color: C.dim, cursor: 'pointer', padding: '0 4px', fontSize: 16 }} title="Tamamen Sil">×</button>
-                </div>
-              ))}
-            </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <input value={newStation} onChange={(e) => setNewStation(e.target.value)} placeholder="Yeni istasyon adı" style={{ flex: 2, minWidth: 160, background: C.page, border: `1px solid ${C.border}`, borderRadius: 6, color: C.paper, padding: '8px 10px', fontSize: 13 }} />
-              <div style={{ display: 'flex', gap: 4 }}>
-                <button onClick={() => setNewGroup('taslama')} style={{ fontSize: 11.5, fontWeight: 600, padding: '0 12px', cursor: 'pointer', borderRadius: 6, background: newGroup === 'taslama' ? `${C.groupA}22` : C.panelAlt, border: `1px solid ${newGroup === 'taslama' ? C.groupA : C.border}`, color: newGroup === 'taslama' ? C.groupA : C.dim }}>Taşlama</button>
-                <button onClick={() => setNewGroup('kaynakmontaj')} style={{ fontSize: 11.5, fontWeight: 600, padding: '0 12px', cursor: 'pointer', borderRadius: 6, background: newGroup === 'kaynakmontaj' ? `${C.groupB}22` : C.panelAlt, border: `1px solid ${newGroup === 'kaynakmontaj' ? C.groupB : C.border}`, color: newGroup === 'kaynakmontaj' ? C.groupB : C.dim }}>Kaynak-Montaj</button>
+        {/* VAGON DETAY MODALI (ADIM 1) */}
+        {selectedWagonDetail && (
+          <WagonDetailModal wagon={currentWagonDetailObj} onClose={() => setSelectedWagonDetail(null)} />
+        )}
+
+        {/* 1. GÖRÜNÜM: GÜNLÜK İSTASYON PANOSU (MEVCUT PANO) */}
+        {mainView === 'dashboard' && (
+          <>
+            {/* Istasyon Yonetimi */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.5 }}>İstasyon Tanımları & Standart Saatler</span>
+                <button 
+                  onClick={() => setShowInactiveStations(!showInactiveStations)} 
+                  style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 6, color: showInactiveStations ? C.good : C.dim, fontSize: 11.5, padding: '4px 10px', cursor: 'pointer', fontWeight: 500 }}>
+                  {showInactiveStations ? '✓ Pasifler Gösteriliyor' : '+ Pasif İstasyonları Göster'}
+                </button>
               </div>
-              <input type="number" min="0" step="0.5" placeholder="Standart a-s" className="num-input" style={{ width: 115 }} value={newStandard} onChange={(e) => setNewStandard(e.target.value)} />
-              <button onClick={addStation} style={{ background: C.line, border: 'none', borderRadius: 6, color: theme === 'light' ? '#FFFFFF' : '#0B0F17', padding: '0 20px', cursor: 'pointer', fontWeight: 700, fontSize: 13, boxShadow: '0 1px 2px rgba(0,103,192,0.2)' }}>Ekle</button>
-            </div>
-          </div>
-        </div>
-
-        {/* Gun Sekmeleri */}
-        <div style={{ display: 'flex', gap: 6, padding: 4, background: C.tabStripBg, borderRadius: 10, marginBottom: 12, border: `1px solid ${C.border}` }}>
-          {weekDates.map((d, i) => {
-            const active = i === dayIndex;
-            const hasData = hasDataForDate(d);
-            const isWeekend = i === 5 || i === 6;
-            return (
-              <button 
-                key={i} 
-                onClick={() => setDayIndex(i)} 
-                style={{ 
-                  flex: 1, 
-                  background: active ? C.tabActiveBg : 'transparent', 
-                  border: active ? `1px solid ${C.border}` : '1px solid transparent', 
-                  borderRadius: 7, 
-                  padding: '9px 4px', 
-                  cursor: 'pointer', 
-                  color: active ? (isWeekend ? C.weekend : C.paper) : (isWeekend ? `${C.weekend}aa` : C.dim), 
-                  position: 'relative',
-                  boxShadow: active ? C.cardShadow : 'none',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <div style={{ fontSize: 11.5, fontWeight: active ? 700 : 600 }}>{DAY_NAMES[i]} {isWeekend && '⚡'}</div>
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: active ? 700 : 500, marginTop: 2 }}>{d.getDate()}</div>
-                {hasData && <div style={{ position: 'absolute', top: 6, right: 6, width: 6, height: 6, borderRadius: '50%', background: C.good }} />}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Secili Gunun Panosu */}
-        <div style={{ background: C.panel, border: `1px solid ${isWeekendDay ? (theme === 'light' ? '#C7D2FE' : C.weekend) : C.border}`, borderRadius: 10, padding: 18, marginBottom: 20, boxShadow: C.cardShadow }}>
-          
-          {/* Gun Islem Cubugu */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
-            <div style={{ fontSize: 13.5, fontWeight: 600, color: isWeekendDay ? C.weekend : C.paper, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span>{isWeekendDay ? '📅 HAFTASONU MESAİSİ:' : 'Girişler:'}</span>
-              <span>{DAY_NAMES[dayIndex]} günü ({selectedDate.getDate()} {MONTHS[selectedDate.getMonth()]})</span>
-              {isWeekendDay && <span style={{ fontSize: 11.5, color: C.dim }}>(06:55–16:55 vardiyası)</span>}
-            </div>
-            
-            <button
-              onClick={resetDayData}
-              style={{
-                background: C.dangerBadgeBg,
-                border: `1px solid ${C.dangerBadgeBorder}`,
-                color: C.bad,
-                padding: '5px 12px',
-                borderRadius: 6,
-                fontSize: 11.5,
-                fontWeight: 600,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 5
-              }}
-              title="Bu günün tüm istasyon verilerini temizler"
-            >
-              <span>🗑️</span> Seçili Günü Tamamen Sıfırla
-            </button>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 14 }}>
-            {data.stations.filter(s => s.active !== false).map((s) => {
-              const entry = data.entries[`${selectedKey}|${s.id}`] || {};
-              const isIdle = !!entry.isIdle;
-              const cDay = carryoverMap[s.id]?.[dayIndex];
-              
-              const totalActual = (parseFloat(entry.actual) || 0) + (entry.hasSecondJob ? (parseFloat(entry.secondJobActual) || 0) : 0);
-              const totalStandard = cDay ? cDay.totalStandard : s.standardHours;
-              const eff = calcEff(totalActual, totalStandard);
-              const color = effColor(eff, C);
-              
-              const totalStaff = parseFloat(entry.totalStaff) || 0;
-              const absentStaff = parseFloat(entry.absentStaff) || 0;
-              const presentStaff = Math.max(totalStaff - absentStaff, 0);
-              const lostHours = absentStaff * shiftHours;
-              
-              const lossHours = (totalStandard != null && totalActual > 0) ? totalActual - totalStandard : null;
-              const lossPercent = (lossHours != null && totalStandard > 0) ? (lossHours / totalStandard) * 100 : null;
-              const showStatus = hasAnyInput(entry) && !isIdle;
-
-              // 1. İş Teorik Bitiş Saati
-              const j1StartMin = timeToMin(entry.startTime) ?? SHIFT_START_MIN;
-              const j1Standard = cDay ? cDay.job1Standard : s.standardHours;
-              const j1NeededMin = stageRequiredMinutes(j1Standard, presentStaff, allowancePercent);
-              const j1Est = j1NeededMin != null ? estimateWithDecision(j1StartMin, j1NeededMin, entry.overtimeDecision, dayIndex) : null;
-
-              // 2. İş Teorik Bitiş Saati
-              let j2Est = null;
-              if (entry.hasSecondJob) {
-                const j2StartMin = timeToMin(entry.secondJobStartTime) ?? (timeToMin(entry.actualEndTime) || j1Est?.finishMin || SHIFT_START_MIN);
-                const j2Standard = parseFloat(entry.secondJobStandard) || s.standardHours || 0;
-                const j2NeededMin = stageRequiredMinutes(j2Standard, presentStaff, allowancePercent);
-                j2Est = j2NeededMin != null ? estimateWithDecision(j2StartMin, j2NeededMin, entry.overtimeDecision, dayIndex) : null;
-              }
-
-              // 1. İş Bitti mi?
-              const actualEndMin = timeToMin(entry.actualEndTime);
-              const isJob1Completed = (entry.job1Status !== 'in_progress') && (actualEndMin != null);
-              const isJob1FinishedWithinShift = isJob1Completed && (actualEndMin <= SHIFT_END_MIN);
-
-              // 2. İş Bitti mi?
-              const hasJob2 = !!entry.hasSecondJob;
-              const secondActualEndMin = timeToMin(entry.secondJobActualEndTime);
-              const isJob2Completed = hasJob2 && (entry.secondJobStatus !== 'in_progress') && (secondActualEndMin != null);
-              const isJob2FinishedWithinShift = isJob2Completed && (secondActualEndMin <= SHIFT_END_MIN);
-
-              // Aktif iş ve kartın tamamlanma durumu
-              const isCardFullyFinishedOnTime = hasJob2 ? isJob2FinishedWithinShift : isJob1FinishedWithinShift;
-              const activeEst = hasJob2 ? (isJob2Completed ? null : j2Est) : (isJob1Completed ? null : j1Est);
-              const activeJobName = hasJob2 ? '2. İş' : '1. İş';
-
-              return (
-                <div key={s.id} className={isIdle ? 'idle-card' : ''} style={{ background: isIdle ? C.panelAlt : C.panel, border: `1px solid ${isWeekendDay ? (theme === 'light' ? '#C7D2FE' : C.weekend) : C.border}`, borderRadius: 8, padding: 14, boxShadow: C.cardShadow }}>
-                  
-                  {/* Kart Ust Basligi */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <span style={{ fontWeight: 600, fontSize: 14, color: C.paper }}>{s.name}</span>
-                    
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <button
-                        onClick={() => toggleDayIdle(selectedKey, s.id)}
-                        style={{
-                          background: isIdle ? C.warningBadgeBg : C.panelAlt,
-                          color: isIdle ? C.copper : C.dim,
-                          border: `1px solid ${isIdle ? C.warningBadgeBorder : C.border}`,
-                          fontSize: 10.5,
-                          padding: '3px 8px',
-                          borderRadius: 4,
-                          cursor: 'pointer',
-                          fontWeight: 600
-                        }}
+              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, boxShadow: C.cardShadow }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
+                  {displayedStations.map((s) => (
+                    <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: s.active === false ? (theme === 'light' ? '#F1F5F9' : '#0B0F17') : C.panelAlt, border: `1px solid ${C.border}`, borderRadius: 6, padding: '7px 10px', opacity: s.active === false ? 0.6 : 1 }}>
+                      <GroupTag group={s.group} />
+                      <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: s.active === false ? C.dim : C.paper }}>
+                        {s.name} {s.active === false && <span style={{ fontSize: 11, color: C.bad }}>(Pasif)</span>}
+                      </span>
+                      <input
+                        type="number" min="0" step="0.5" placeholder="a-s"
+                        className="num-input num-input-sm" style={{ width: 75 }}
+                        value={s.standardHours ?? ''}
+                        onChange={(e) => updateStationField(s.id, 'standardHours', e.target.value === '' ? null : parseFloat(e.target.value))}
+                      />
+                      <button 
+                        onClick={() => toggleStationActive(s.id, s.active !== false)} 
+                        style={{ background: s.active === false ? C.dangerBadgeBg : C.successBadgeBg, border: `1px solid ${s.active === false ? C.dangerBadgeBorder : C.successBadgeBorder}`, color: s.active === false ? C.bad : C.good, cursor: 'pointer', padding: '4px 10px', fontSize: 11, fontWeight: 600, borderRadius: 4 }}
                       >
-                        {isIdle ? '⏸️ Planlı Boşta' : 'Çalışıyor'}
+                        {s.active === false ? 'Pasif' : 'Aktif'}
                       </button>
-
-                      {hasAnyInput(entry) && (
-                        <button
-                          onClick={() => resetStationDayData(selectedKey, s.id, s.name)}
-                          style={{
-                            background: C.panelAlt,
-                            border: `1px solid ${C.border}`,
-                            color: C.dim,
-                            padding: '3px 6px',
-                            borderRadius: 4,
-                            fontSize: 10.5,
-                            cursor: 'pointer'
-                          }}
-                          title="Sadece bu istasyonun bugünkü girişlerini sıfırlar"
-                        >
-                          ↺ Sıfırla
-                        </button>
-                      )}
-
-                      {!isIdle && (
-                        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 700, color }}>
-                          {eff === null ? '—' : `${Math.round(eff)}%`}
-                        </span>
-                      )}
+                      <button onClick={() => removeStation(s.id)} style={{ background: 'transparent', border: 'none', color: C.dim, cursor: 'pointer', padding: '0 4px', fontSize: 16 }} title="Tamamen Sil">×</button>
                     </div>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <input value={newStation} onChange={(e) => setNewStation(e.target.value)} placeholder="Yeni istasyon adı" style={{ flex: 2, minWidth: 160, background: C.page, border: `1px solid ${C.border}`, borderRadius: 6, color: C.paper, padding: '8px 10px', fontSize: 13 }} />
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button onClick={() => setNewGroup('taslama')} style={{ fontSize: 11.5, fontWeight: 600, padding: '0 12px', cursor: 'pointer', borderRadius: 6, background: newGroup === 'taslama' ? `${C.groupA}22` : C.panelAlt, border: `1px solid ${newGroup === 'taslama' ? C.groupA : C.border}`, color: newGroup === 'taslama' ? C.groupA : C.dim }}>Taşlama</button>
+                    <button onClick={() => setNewGroup('kaynakmontaj')} style={{ fontSize: 11.5, fontWeight: 600, padding: '0 12px', cursor: 'pointer', borderRadius: 6, background: newGroup === 'kaynakmontaj' ? `${C.groupB}22` : C.panelAlt, border: `1px solid ${newGroup === 'kaynakmontaj' ? C.groupB : C.border}`, color: newGroup === 'kaynakmontaj' ? C.groupB : C.dim }}>Kaynak-Montaj</button>
                   </div>
+                  <input type="number" min="0" step="0.5" placeholder="Standart a-s" className="num-input" style={{ width: 115 }} value={newStandard} onChange={(e) => setNewStandard(e.target.value)} />
+                  <button onClick={addStation} style={{ background: C.line, border: 'none', borderRadius: 6, color: theme === 'light' ? '#FFFFFF' : '#0B0F17', padding: '0 20px', cursor: 'pointer', fontWeight: 700, fontSize: 13, boxShadow: '0 1px 2px rgba(0,103,192,0.2)' }}>Ekle</button>
+                </div>
+              </div>
+            </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-                    <GroupTag group={s.group} />
-                    <span style={{ fontSize: 11, color: C.dim, fontFamily: "'JetBrains Mono', monospace" }}>
-                      {s.standardHours != null ? `Standart: ${s.standardHours} a-s` : 'Standart yok'}
-                    </span>
-                  </div>
+            {/* Gun Sekmeleri */}
+            <div style={{ display: 'flex', gap: 6, padding: 4, background: C.tabStripBg, borderRadius: 10, marginBottom: 12, border: `1px solid ${C.border}` }}>
+              {weekDates.map((d, i) => {
+                const active = i === dayIndex;
+                const hasData = hasDataForDate(d);
+                const isWeekend = i === 5 || i === 6;
+                return (
+                  <button 
+                    key={i} 
+                    onClick={() => setDayIndex(i)} 
+                    style={{ 
+                      flex: 1, 
+                      background: active ? C.tabActiveBg : 'transparent', 
+                      border: active ? `1px solid ${C.border}` : '1px solid transparent', 
+                      borderRadius: 7, 
+                      padding: '9px 4px', 
+                      cursor: 'pointer', 
+                      color: active ? (isWeekend ? C.weekend : C.paper) : (isWeekend ? `${C.weekend}aa` : C.dim), 
+                      position: 'relative',
+                      boxShadow: active ? C.cardShadow : 'none',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    <div style={{ fontSize: 11.5, fontWeight: active ? 700 : 600 }}>{DAY_NAMES[i]} {isWeekend && '⚡'}</div>
+                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: active ? 700 : 500, marginTop: 2 }}>{d.getDate()}</div>
+                    {hasData && <div style={{ position: 'absolute', top: 6, right: 6, width: 6, height: 6, borderRadius: '50%', background: C.good }} />}
+                  </button>
+                );
+              })}
+            </div>
 
-                  {isIdle ? (
-                    <div style={{ padding: '16px 10px', textAlign: 'center', background: C.panelAlt, border: `1px dashed ${C.border}`, borderRadius: 6, marginTop: 10 }}>
-                      <div style={{ fontSize: 12, color: C.copper, fontWeight: 600, marginBottom: 3 }}>İstasyon Bugün Planlı Olarak Boşta</div>
-                      <div style={{ fontSize: 11, color: C.dim }}>Verim ortalamaları ve alarmlar etkilenmez.</div>
-                    </div>
-                  ) : (
-                    <>
-                      {/* Vagon Numarası & Durumu */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, background: C.wagonBox, padding: '6px 10px', borderRadius: 6, border: `1px solid ${C.wagonBorder}` }}>
-                        <span style={{ fontSize: 11, color: C.wagonText, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
-                          <span>🚆</span> Vagon No:
-                        </span>
-                        <input 
-                          type="text"
-                          placeholder={cDay?.isCarryover && cDay?.job1WagonNo ? `Dünden: ${cDay.job1WagonNo}` : "örn. V-101 / Şasi 12"}
-                          value={entry.wagonNo ?? (cDay?.isCarryover && cDay?.job1WagonNo ? cDay.job1WagonNo : '')}
-                          onChange={(e) => updateEntry(selectedKey, s.id, 'wagonNo', e.target.value)}
-                          style={{
-                            flex: 1,
-                            background: C.wagonInputBg,
-                            border: `1px solid ${C.wagonInputBorder}`,
-                            borderRadius: 4,
-                            color: C.wagonText,
-                            fontWeight: 600,
-                            padding: '5px 8px',
-                            fontSize: 12,
-                            fontFamily: "'JetBrains Mono', monospace"
-                          }}
-                        />
-                        {(entry.wagonNo || cDay?.job1WagonNo) && (
-                          <span style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 4, background: entry.job1Status === 'in_progress' ? C.warningBadgeBg : (isJob1Completed ? C.successBadgeBg : `${C.line}22`), color: entry.job1Status === 'in_progress' ? C.copper : (isJob1Completed ? C.good : C.line), border: `1px solid ${entry.job1Status === 'in_progress' ? C.warningBadgeBorder : (isJob1Completed ? C.successBadgeBorder : `${C.line}44`)}`, fontWeight: 600, whiteSpace: 'nowrap' }}>
-                            {entry.job1Status === 'in_progress' ? '⏳ Devam' : (isJob1Completed ? '✓ Bitti' : 'İşlemde')}
-                          </span>
-                        )}
-                      </div>
+            {/* Secili Gunun Panosu */}
+            <div style={{ background: C.panel, border: `1px solid ${isWeekendDay ? (theme === 'light' ? '#C7D2FE' : C.weekend) : C.border}`, borderRadius: 10, padding: 18, marginBottom: 20, boxShadow: C.cardShadow }}>
+              
+              {/* Gun Islem Cubugu */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: isWeekendDay ? C.weekend : C.paper, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>{isWeekendDay ? '📅 HAFTASONU MESAİSİ:' : 'Girişler:'}</span>
+                  <span>{DAY_NAMES[dayIndex]} günü ({selectedDate.getDate()} {MONTHS[selectedDate.getMonth()]})</span>
+                  {isWeekendDay && <span style={{ fontSize: 11.5, color: C.dim }}>(06:55–16:55 vardiyası)</span>}
+                </div>
+                
+                <button
+                  onClick={resetDayData}
+                  style={{
+                    background: C.dangerBadgeBg,
+                    border: `1px solid ${C.dangerBadgeBorder}`,
+                    color: C.bad,
+                    padding: '5px 12px',
+                    borderRadius: 6,
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5
+                  }}
+                  title="Bu günün tüm istasyon verilerini temizler"
+                >
+                  <span>🗑️</span> Seçili Günü Tamamen Sıfırla
+                </button>
+              </div>
 
-                      {/* Personel Girisi */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10, background: C.panelAlt, padding: 8, borderRadius: 6, border: `1px solid ${C.border}` }}>
-                        <div>
-                          <div style={{ fontSize: 10.5, color: C.dim, marginBottom: 3, textAlign: 'center', fontWeight: 500 }}>Mevcut Personel</div>
-                          <input type="number" min="0" step="1" className="num-input num-input-sm" placeholder="0" value={entry.totalStaff || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'totalStaff', e.target.value)} />
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 10.5, color: C.dim, marginBottom: 3, textAlign: 'center', fontWeight: 500 }}>Devamsız Personel</div>
-                          <input type="number" min="0" step="1" className="num-input num-input-sm" placeholder="0" value={entry.absentStaff || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'absentStaff', e.target.value)} />
-                        </div>
-                        {absentStaff > 0 && (
-                          <div style={{ gridColumn: '1 / -1', fontSize: 11, color: C.bad, textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
-                            Devamsızlık kaybı: {lostHours.toFixed(1)} a-s
-                          </div>
-                        )}
-                      </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 14 }}>
+                {data.stations.filter(s => s.active !== false).map((s) => {
+                  const entry = data.entries[`${selectedKey}|${s.id}`] || {};
+                  const isIdle = !!entry.isIdle;
+                  const cDay = carryoverMap[s.id]?.[dayIndex];
+                  
+                  const totalActual = (parseFloat(entry.actual) || 0) + (entry.hasSecondJob ? (parseFloat(entry.secondJobActual) || 0) : 0);
+                  const totalStandard = cDay ? cDay.totalStandard : s.standardHours;
+                  const eff = calcEff(totalActual, totalStandard);
+                  const color = effColor(eff, C);
+                  
+                  const totalStaff = parseFloat(entry.totalStaff) || 0;
+                  const absentStaff = parseFloat(entry.absentStaff) || 0;
+                  const presentStaff = Math.max(totalStaff - absentStaff, 0);
+                  const lostHours = absentStaff * shiftHours;
+                  
+                  const lossHours = (totalStandard != null && totalActual > 0) ? totalActual - totalStandard : null;
+                  const lossPercent = (lossHours != null && totalStandard > 0) ? (lossHours / totalStandard) * 100 : null;
+                  const showStatus = hasAnyInput(entry) && !isIdle;
 
-                      {/* 1. İŞ KUTUSU */}
-                      <div style={{ background: C.panelAlt, border: `1px solid ${C.border}`, borderRadius: 6, padding: 10, marginBottom: 10 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                          <span style={{ fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace", color: cDay?.isCarryover ? C.copper : C.paper, fontWeight: 700 }}>
-                            {cDay?.isCarryover ? `↷ 1. İŞ: DÜNDEN KALAN (${cDay.job1Standard.toFixed(1)} a-s)` : `1. İŞ: STANDART (${s.standardHours != null ? `${s.standardHours} a-s` : '—'})`}
-                          </span>
-                          
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  // 1. İş Teorik Bitiş Saati
+                  const j1StartMin = timeToMin(entry.startTime) ?? SHIFT_START_MIN;
+                  const j1Standard = cDay ? cDay.job1Standard : s.standardHours;
+                  const j1NeededMin = stageRequiredMinutes(j1Standard, presentStaff, allowancePercent);
+                  const j1Est = j1NeededMin != null ? estimateWithDecision(j1StartMin, j1NeededMin, entry.overtimeDecision, dayIndex) : null;
+
+                  // 2. İş Teorik Bitiş Saati
+                  let j2Est = null;
+                  if (entry.hasSecondJob) {
+                    const j2StartMin = timeToMin(entry.secondJobStartTime) ?? (timeToMin(entry.actualEndTime) || j1Est?.finishMin || SHIFT_START_MIN);
+                    const j2Standard = parseFloat(entry.secondJobStandard) || s.standardHours || 0;
+                    const j2NeededMin = stageRequiredMinutes(j2Standard, presentStaff, allowancePercent);
+                    j2Est = j2NeededMin != null ? estimateWithDecision(j2StartMin, j2NeededMin, entry.overtimeDecision, dayIndex) : null;
+                  }
+
+                  // 1. İş Bitti mi?
+                  const actualEndMin = timeToMin(entry.actualEndTime);
+                  const isJob1Completed = (entry.job1Status !== 'in_progress') && (actualEndMin != null);
+                  const isJob1FinishedWithinShift = isJob1Completed && (actualEndMin <= SHIFT_END_MIN);
+
+                  // 2. İş Bitti mi?
+                  const hasJob2 = !!entry.hasSecondJob;
+                  const secondActualEndMin = timeToMin(entry.secondJobActualEndTime);
+                  const isJob2Completed = hasJob2 && (entry.secondJobStatus !== 'in_progress') && (secondActualEndMin != null);
+                  const isJob2FinishedWithinShift = isJob2Completed && (secondActualEndMin <= SHIFT_END_MIN);
+
+                  // Aktif iş ve kartın tamamlanma durumu
+                  const isCardFullyFinishedOnTime = hasJob2 ? isJob2FinishedWithinShift : isJob1FinishedWithinShift;
+                  const activeEst = hasJob2 ? (isJob2Completed ? null : j2Est) : (isJob1Completed ? null : j1Est);
+                  const activeJobName = hasJob2 ? '2. İş' : '1. İş';
+
+                  return (
+                    <div key={s.id} className={isIdle ? 'idle-card' : ''} style={{ background: isIdle ? C.panelAlt : C.panel, border: `1px solid ${isWeekendDay ? (theme === 'light' ? '#C7D2FE' : C.weekend) : C.border}`, borderRadius: 8, padding: 14, boxShadow: C.cardShadow }}>
+                      
+                      {/* Kart Ust Basligi */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <span style={{ fontWeight: 600, fontSize: 14, color: C.paper }}>{s.name}</span>
+                        
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <button
+                            onClick={() => toggleDayIdle(selectedKey, s.id)}
+                            style={{
+                              background: isIdle ? C.warningBadgeBg : C.panelAlt,
+                              color: isIdle ? C.copper : C.dim,
+                              border: `1px solid ${isIdle ? C.warningBadgeBorder : C.border}`,
+                              fontSize: 10.5,
+                              padding: '3px 8px',
+                              borderRadius: 4,
+                              cursor: 'pointer',
+                              fontWeight: 600
+                            }}
+                          >
+                            {isIdle ? '⏸️ Planlı Boşta' : 'Çalışıyor'}
+                          </button>
+
+                          {hasAnyInput(entry) && (
                             <button
-                              onClick={() => updateEntry(selectedKey, s.id, 'job1Status', entry.job1Status === 'in_progress' ? 'completed' : 'in_progress')}
+                              onClick={() => resetStationDayData(selectedKey, s.id, s.name)}
                               style={{
-                                background: entry.job1Status === 'in_progress' ? C.warningBadgeBg : C.successBadgeBg,
-                                border: `1px solid ${entry.job1Status === 'in_progress' ? C.warningBadgeBorder : C.successBadgeBorder}`,
-                                color: entry.job1Status === 'in_progress' ? C.copper : C.good,
+                                background: C.panelAlt,
+                                border: `1px solid ${C.border}`,
+                                color: C.dim,
+                                padding: '3px 6px',
+                                borderRadius: 4,
                                 fontSize: 10.5,
-                                padding: '3px 8px',
-                                borderRadius: 4,
-                                cursor: 'pointer',
-                                fontWeight: 600
+                                cursor: 'pointer'
                               }}
-                              title="İş bittiyse 'Tamamlandı', yarına/haftasonuna devredecekse 'Devam Ediyor' seçin"
+                              title="Sadece bu istasyonun bugünkü girişlerini sıfırlar"
                             >
-                              {entry.job1Status === 'in_progress' ? '⏳ Devam Ediyor' : '✓ Tamamlandı'}
+                              ↺ Sıfırla
                             </button>
-                          </div>
-                        </div>
+                          )}
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, marginBottom: 4 }}>
-                          <div>
-                            <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>Başlama</div>
-                            <input type="time" className="num-input num-input-sm" value={entry.startTime || ''} placeholder="06:55" onChange={(e) => updateEntry(selectedKey, s.id, 'startTime', e.target.value)} />
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 9.5, color: C.copper, marginBottom: 3, textAlign: 'center', fontWeight: 600 }}>Teorik Bitiş</div>
-                            <div style={{ background: C.warningBadgeBg, border: `1px solid ${C.warningBadgeBorder}`, borderRadius: 4, padding: '5px 2px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: j1Est?.mode === 'exceeds' || j1Est?.mode === 'carryover' ? C.bad : j1Est?.mode?.includes('weekend') ? C.weekend : j1Est?.mode === 'overtime' ? C.copper : C.good, fontWeight: 700 }}>
-                              {j1Est ? j1Est.label : '—'}
-                            </div>
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>Gerçek Bitiş</div>
-                            <input type="time" className="num-input num-input-sm" value={entry.actualEndTime || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'actualEndTime', e.target.value)} />
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>Harcanan</div>
-                            <div style={{ background: C.wagonInputBg, border: `1px solid ${C.border}`, borderRadius: 4, padding: '5px 2px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: C.paper, fontWeight: 700 }}>
-                              {entry.actual ? `${parseFloat(entry.actual).toFixed(1)} a-s` : '—'}
-                            </div>
-                          </div>
-                        </div>
-
-                        {entry.job1Status === 'in_progress' && cDay?.job1Remainder > 0.05 && (
-                          <div style={{ fontSize: 11, color: C.copper, fontFamily: "'JetBrains Mono', monospace", marginTop: 4, fontWeight: 600 }}>
-                            ⏳ Devredecek kalan iş: {cDay.job1Remainder.toFixed(1)} a-s
-                          </div>
-                        )}
-                      </div>
-
-                      {/* 2. İŞ BAŞLATMA BUTONU / ALANI */}
-                      {!entry.hasSecondJob ? (
-                        <button
-                          type="button"
-                          onClick={() => toggleSecondJob(selectedKey, s.id, entry.actualEndTime, s.standardHours)}
-                          style={{
-                            width: '100%',
-                            background: C.successBadgeBg,
-                            border: `1px dashed ${C.successBadgeBorder}`,
-                            color: C.good,
-                            padding: '9px 8px',
-                            borderRadius: 6,
-                            cursor: 'pointer',
-                            fontWeight: 600,
-                            fontSize: 12,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: 6,
-                            marginBottom: 10
-                          }}
-                        >
-                          <span>➕</span> Gün İçinde 2. Yeni İşi Başlat
-                        </button>
-                      ) : (
-                        <div style={{ background: C.secondJobBg, border: `1px solid ${C.secondJobBorder}`, borderRadius: 6, padding: 10, marginBottom: 10 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, borderBottom: `1px solid ${C.secondJobBorder}`, paddingBottom: 6 }}>
-                            <span style={{ fontSize: 11.5, color: C.secondJobHeader, fontWeight: 700 }}>
-                              ⚡ 2. İŞ (GÜN İÇİNDE BAŞLAYAN YENİ İŞ)
+                          {!isIdle && (
+                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 700, color }}>
+                              {eff === null ? '—' : `${Math.round(eff)}%`}
                             </span>
-                            
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                              <button
-                                onClick={() => updateEntry(selectedKey, s.id, 'secondJobStatus', entry.secondJobStatus === 'in_progress' ? 'completed' : 'in_progress')}
-                                style={{
-                                  background: entry.secondJobStatus === 'in_progress' ? C.warningBadgeBg : C.successBadgeBg,
-                                  border: `1px solid ${entry.secondJobStatus === 'in_progress' ? C.warningBadgeBorder : C.successBadgeBorder}`,
-                                  color: entry.secondJobStatus === 'in_progress' ? C.copper : C.good,
-                                  fontSize: 10.5,
-                                  padding: '2px 6px',
-                                  borderRadius: 4,
-                                  cursor: 'pointer',
-                                  fontWeight: 600
-                                }}
-                              >
-                                {entry.secondJobStatus === 'in_progress' ? '⏳ Devam Ediyor' : '✓ Tamamlandı'}
-                              </button>
-                              
-                              <button
-                                type="button"
-                                onClick={() => toggleSecondJob(selectedKey, s.id, entry.actualEndTime, s.standardHours)}
-                                style={{
-                                  background: C.dangerBadgeBg,
-                                  border: `1px solid ${C.dangerBadgeBorder}`,
-                                  color: C.bad,
-                                  fontSize: 10.5,
-                                  padding: '2px 6px',
-                                  cursor: 'pointer',
-                                  borderRadius: 4,
-                                  fontWeight: 600
-                                }}
-                              >
-                                ✕ Kaldır
-                              </button>
-                            </div>
-                          </div>
-
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                            <span style={{ fontSize: 11, color: C.secondJobSubText, fontWeight: 500 }}>Yeni İş Standart:</span>
-                            <input
-                              type="number" min="0" step="0.5" placeholder="a-s"
-                              className="num-input num-input-sm" style={{ width: 70, padding: '3px 6px' }}
-                              value={entry.secondJobStandard || ''}
-                              onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobStandard', e.target.value)}
-                            />
-                            <span style={{ fontSize: 11, color: C.secondJobSubText }}>adam-saat</span>
-                          </div>
-
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, background: C.secondJobWagonBox, padding: '5px 8px', borderRadius: 4, border: `1px solid ${C.secondJobWagonBorder}` }}>
-                            <span style={{ fontSize: 11, color: C.secondJobWagonText, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", whiteSpace: 'nowrap' }}>🚆 2. İş Vagon No:</span>
-                            <input 
-                              type="text"
-                              placeholder={entry.wagonNo || "örn. V-102"}
-                              value={entry.secondJobWagonNo || ''}
-                              onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobWagonNo', e.target.value)}
-                              style={{
-                                flex: 1,
-                                background: C.wagonInputBg,
-                                border: `1px solid ${C.secondJobWagonBorder}`,
-                                borderRadius: 4,
-                                color: C.secondJobWagonText,
-                                fontWeight: 600,
-                                padding: '4px 6px',
-                                fontSize: 11,
-                                fontFamily: "'JetBrains Mono', monospace"
-                              }}
-                            />
-                            {entry.secondJobWagonNo && (
-                              <span style={{ fontSize: 10, padding: '2px 5px', borderRadius: 4, background: entry.secondJobStatus === 'in_progress' ? C.warningBadgeBg : (isJob2Completed ? C.successBadgeBg : `${C.line}22`), color: entry.secondJobStatus === 'in_progress' ? C.secondJobWagonText : (isJob2Completed ? C.good : C.line), border: `1px solid ${entry.secondJobStatus === 'in_progress' ? C.secondJobWagonBorder : (isJob2Completed ? C.successBadgeBorder : `${C.line}44`)}`, fontWeight: 600, whiteSpace: 'nowrap' }}>
-                                {entry.secondJobStatus === 'in_progress' ? '⏳ Devam' : (isJob2Completed ? '✓ Bitti' : 'İşlemde')}
-                              </span>
-                            )}
-                          </div>
-
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, marginBottom: 4 }}>
-                            <div>
-                              <div style={{ fontSize: 9.5, color: C.secondJobSubText, marginBottom: 3, textAlign: 'center' }}>2. Başlama</div>
-                              <input type="time" className="num-input num-input-sm" value={entry.secondJobStartTime || ''} placeholder={entry.actualEndTime || '12:50'} onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobStartTime', e.target.value)} />
-                            </div>
-                            <div>
-                              <div style={{ fontSize: 9.5, color: C.secondJobHeader, marginBottom: 3, textAlign: 'center', fontWeight: 600 }}>Teorik Bitiş</div>
-                              <div style={{ background: C.warningBadgeBg, border: `1px solid ${C.warningBadgeBorder}`, borderRadius: 4, padding: '5px 2px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: j2Est?.mode === 'exceeds' || j2Est?.mode === 'carryover' ? C.bad : j2Est?.mode?.includes('weekend') ? C.weekend : j2Est?.mode === 'overtime' ? C.copper : C.good, fontWeight: 700 }}>
-                                {j2Est ? j2Est.label : '—'}
-                              </div>
-                            </div>
-                            <div>
-                              <div style={{ fontSize: 9.5, color: C.secondJobSubText, marginBottom: 3, textAlign: 'center' }}>Gerçek Bitiş</div>
-                              <input type="time" className="num-input num-input-sm" value={entry.secondJobActualEndTime || ''} placeholder="16:55" onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobActualEndTime', e.target.value)} />
-                            </div>
-                            <div>
-                              <div style={{ fontSize: 9.5, color: C.secondJobSubText, marginBottom: 3, textAlign: 'center' }}>Harcanan</div>
-                              <div style={{ background: C.wagonInputBg, border: `1px solid ${C.warningBadgeBorder}`, borderRadius: 4, padding: '5px 2px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: C.secondJobHeader, fontWeight: 700 }}>
-                                {entry.secondJobActual ? `${parseFloat(entry.secondJobActual).toFixed(1)} a-s` : '—'}
-                              </div>
-                            </div>
-                          </div>
-
-                          {entry.secondJobStatus === 'in_progress' && cDay?.job2Remainder > 0.05 && (
-                            <div style={{ fontSize: 11, color: C.secondJobHeader, fontFamily: "'JetBrains Mono', monospace", marginTop: 6, fontWeight: 600 }}>
-                              ↷ 2. İşten devredecek: {cDay.job2Remainder.toFixed(1)} a-s
-                            </div>
                           )}
                         </div>
-                      )}
+                      </div>
 
-                      {/* Toplam Gerçekleşen Ozet */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, padding: '6px 10px', background: C.totalBoxBg, border: `1px solid ${C.totalBoxBorder}`, borderRadius: 6 }}>
-                        <span style={{ fontSize: 11, color: C.totalBoxText, fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>Günün Toplamı:</span>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: C.paper, fontFamily: "'JetBrains Mono', monospace" }}>
-                          {totalActual > 0 ? `${totalActual.toFixed(1)} a-s` : '—'}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+                        <GroupTag group={s.group} />
+                        <span style={{ fontSize: 11, color: C.dim, fontFamily: "'JetBrains Mono', monospace" }}>
+                          {s.standardHours != null ? `Standart: ${s.standardHours} a-s` : 'Standart yok'}
                         </span>
                       </div>
 
-                      {/* EK MESAİ & HAFTASONU BİLDİRİMLERİ */}
-                      {isCardFullyFinishedOnTime ? (
-                        <div style={{ marginBottom: 8, padding: '6px 10px', background: C.successBadgeBg, border: `1px solid ${C.successBadgeBorder}`, borderRadius: 6, fontSize: 11, color: C.good, display: 'flex', alignItems: 'center', gap: 6, fontWeight: 500 }}>
-                          <span>✓</span> İş vardiya içinde (16:55) başarıyla tamamlandı.
+                      {isIdle ? (
+                        <div style={{ padding: '16px 10px', textAlign: 'center', background: C.panelAlt, border: `1px dashed ${C.border}`, borderRadius: 6, marginTop: 10 }}>
+                          <div style={{ fontSize: 12, color: C.copper, fontWeight: 600, marginBottom: 3 }}>İstasyon Bugün Planlı Olarak Boşta</div>
+                          <div style={{ fontSize: 11, color: C.dim }}>Verim ortalamaları ve alarmlar etkilenmez.</div>
                         </div>
                       ) : (
                         <>
-                          {/* CUMA GÜNÜ MESAİ / HAFTASONU KARAR PANELİ */}
-                          {dayIndex === 4 && (
-                            <div style={{ marginBottom: 10, background: C.otFridayBg, padding: 10, borderRadius: 6, border: `1px solid ${C.otFridayBorder}` }}>
-                              <div style={{ fontSize: 11, color: C.otFridayText, marginBottom: 6, fontWeight: 600 }}>
-                                ⚠ {activeJobName} için Cuma Mesai / Haftasonu Planı:
+                          {/* Vagon Numarası & Durumu (Tıklanınca Detay Modalı Açar) */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, background: C.wagonBox, padding: '6px 10px', borderRadius: 6, border: `1px solid ${C.wagonBorder}` }}>
+                            <span style={{ fontSize: 11, color: C.wagonText, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
+                              <span>🚆</span> Vagon No:
+                            </span>
+                            <input 
+                              type="text"
+                              placeholder={cDay?.isCarryover && cDay?.job1WagonNo ? `Dünden: ${cDay.job1WagonNo}` : "örn. V-101 / Şasi 12"}
+                              value={entry.wagonNo ?? (cDay?.isCarryover && cDay?.job1WagonNo ? cDay.job1WagonNo : '')}
+                              onChange={(e) => updateEntry(selectedKey, s.id, 'wagonNo', e.target.value)}
+                              style={{
+                                flex: 1,
+                                background: C.wagonInputBg,
+                                border: `1px solid ${C.wagonInputBorder}`,
+                                borderRadius: 4,
+                                color: C.wagonText,
+                                fontWeight: 600,
+                                padding: '5px 8px',
+                                fontSize: 12,
+                                fontFamily: "'JetBrains Mono', monospace"
+                              }}
+                            />
+                            {(entry.wagonNo || cDay?.job1WagonNo) && (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <span style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 4, background: entry.job1Status === 'in_progress' ? C.warningBadgeBg : (isJob1Completed ? C.successBadgeBg : `${C.line}22`), color: entry.job1Status === 'in_progress' ? C.copper : (isJob1Completed ? C.good : C.line), border: `1px solid ${entry.job1Status === 'in_progress' ? C.warningBadgeBorder : (isJob1Completed ? C.successBadgeBorder : `${C.line}44`)}`, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                  {entry.job1Status === 'in_progress' ? '⏳ Devam' : (isJob1Completed ? '✓ Bitti' : 'İşlemde')}
+                                </span>
+                                <button
+                                  onClick={() => setSelectedWagonDetail((entry.wagonNo || cDay?.job1WagonNo).trim())}
+                                  style={{ background: C.headerBtnBg, border: `1px solid ${C.border}`, borderRadius: 4, color: C.line, padding: '2px 5px', fontSize: 10, cursor: 'pointer', fontWeight: 600 }}
+                                  title="Vagon Yolculuk Detayını Aç"
+                                >
+                                  Detay
+                                </button>
                               </div>
-                              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                            )}
+                          </div>
+
+                          {/* Personel Girisi */}
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10, background: C.panelAlt, padding: 8, borderRadius: 6, border: `1px solid ${C.border}` }}>
+                            <div>
+                              <div style={{ fontSize: 10.5, color: C.dim, marginBottom: 3, textAlign: 'center', fontWeight: 500 }}>Mevcut Personel</div>
+                              <input type="number" min="0" step="1" className="num-input num-input-sm" placeholder="0" value={entry.totalStaff || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'totalStaff', e.target.value)} />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 10.5, color: C.dim, marginBottom: 3, textAlign: 'center', fontWeight: 500 }}>Devamsız Personel</div>
+                              <input type="number" min="0" step="1" className="num-input num-input-sm" placeholder="0" value={entry.absentStaff || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'absentStaff', e.target.value)} />
+                            </div>
+                            {absentStaff > 0 && (
+                              <div style={{ gridColumn: '1 / -1', fontSize: 11, color: C.bad, textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
+                                Devamsızlık kaybı: {lostHours.toFixed(1)} a-s
+                              </div>
+                            )}
+                          </div>
+
+                          {/* 1. İŞ KUTUSU */}
+                          <div style={{ background: C.panelAlt, border: `1px solid ${C.border}`, borderRadius: 6, padding: 10, marginBottom: 10 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                              <span style={{ fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace", color: cDay?.isCarryover ? C.copper : C.paper, fontWeight: 700 }}>
+                                {cDay?.isCarryover ? `↷ 1. İŞ: DÜNDEN KALAN (${cDay.job1Standard.toFixed(1)} a-s)` : `1. İŞ: STANDART (${s.standardHours != null ? `${s.standardHours} a-s` : '—'})`}
+                              </span>
+                              
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                                 <button
-                                  onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'friday_ot')}
-                                  style={{ flex: 1, minWidth: 95, fontSize: 10.5, fontWeight: 600, padding: '5px 4px', cursor: 'pointer', borderRadius: 4, background: entry.overtimeDecision === 'friday_ot' ? C.copper : C.panel, border: `1px solid ${entry.overtimeDecision === 'friday_ot' ? C.copper : C.border}`, color: entry.overtimeDecision === 'friday_ot' ? (theme === 'light' ? '#FFFFFF' : '#0B0F17') : C.copper }}
+                                  onClick={() => updateEntry(selectedKey, s.id, 'job1Status', entry.job1Status === 'in_progress' ? 'completed' : 'in_progress')}
+                                  style={{
+                                    background: entry.job1Status === 'in_progress' ? C.warningBadgeBg : C.successBadgeBg,
+                                    border: `1px solid ${entry.job1Status === 'in_progress' ? C.warningBadgeBorder : C.successBadgeBorder}`,
+                                    color: entry.job1Status === 'in_progress' ? C.copper : C.good,
+                                    fontSize: 10.5,
+                                    padding: '3px 8px',
+                                    borderRadius: 4,
+                                    cursor: 'pointer',
+                                    fontWeight: 600
+                                  }}
+                                  title="İş bittiyse 'Tamamlandı', yarına/haftasonuna devredecekse 'Devam Ediyor' seçin"
                                 >
-                                  Cuma Akşamı (17:25–20:00)
-                                </button>
-                                <button
-                                  onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'sat_only')}
-                                  style={{ flex: 1, minWidth: 95, fontSize: 10.5, fontWeight: 600, padding: '5px 4px', cursor: 'pointer', borderRadius: 4, background: entry.overtimeDecision === 'sat_only' ? C.weekend : C.panel, border: `1px solid ${entry.overtimeDecision === 'sat_only' ? C.weekend : C.border}`, color: entry.overtimeDecision === 'sat_only' ? (theme === 'light' ? '#FFFFFF' : '#0B0F17') : C.weekend }}
-                                >
-                                  Cumartesi (06:55–16:55)
-                                </button>
-                                <button
-                                  onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'no')}
-                                  style={{ flex: 1, minWidth: 70, fontSize: 10.5, fontWeight: 600, padding: '5px 4px', cursor: 'pointer', borderRadius: 4, background: entry.overtimeDecision === 'no' ? C.bad : C.panel, border: `1px solid ${entry.overtimeDecision === 'no' ? C.bad : C.border}`, color: entry.overtimeDecision === 'no' ? (theme === 'light' ? '#FFFFFF' : '#0B0F17') : C.bad }}
-                                >
-                                  Mesai Yok
+                                  {entry.job1Status === 'in_progress' ? '⏳ Devam Ediyor' : '✓ Tamamlandı'}
                                 </button>
                               </div>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, marginBottom: 4 }}>
+                              <div>
+                                <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>Başlama</div>
+                                <input type="time" className="num-input num-input-sm" value={entry.startTime || ''} placeholder="06:55" onChange={(e) => updateEntry(selectedKey, s.id, 'startTime', e.target.value)} />
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 9.5, color: C.copper, marginBottom: 3, textAlign: 'center', fontWeight: 600 }}>Teorik Bitiş</div>
+                                <div style={{ background: C.warningBadgeBg, border: `1px solid ${C.warningBadgeBorder}`, borderRadius: 4, padding: '5px 2px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: j1Est?.mode === 'exceeds' || j1Est?.mode === 'carryover' ? C.bad : j1Est?.mode?.includes('weekend') ? C.weekend : j1Est?.mode === 'overtime' ? C.copper : C.good, fontWeight: 700 }}>
+                                  {j1Est ? j1Est.label : '—'}
+                                </div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>Gerçek Bitiş</div>
+                                <input type="time" className="num-input num-input-sm" value={entry.actualEndTime || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'actualEndTime', e.target.value)} />
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>Harcanan</div>
+                                <div style={{ background: C.wagonInputBg, border: `1px solid ${C.border}`, borderRadius: 4, padding: '5px 2px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: C.paper, fontWeight: 700 }}>
+                                  {entry.actual ? `${parseFloat(entry.actual).toFixed(1)} a-s` : '—'}
+                                </div>
+                              </div>
+                            </div>
+
+                            {entry.job1Status === 'in_progress' && cDay?.job1Remainder > 0.05 && (
+                              <div style={{ fontSize: 11, color: C.copper, fontFamily: "'JetBrains Mono', monospace", marginTop: 4, fontWeight: 600 }}>
+                                ⏳ Devredecek kalan iş: {cDay.job1Remainder.toFixed(1)} a-s
+                              </div>
+                            )}
+                          </div>
+
+                          {/* 2. İŞ BAŞLATMA BUTONU / ALANI */}
+                          {!entry.hasSecondJob ? (
+                            <button
+                              type="button"
+                              onClick={() => toggleSecondJob(selectedKey, s.id, entry.actualEndTime, s.standardHours)}
+                              style={{
+                                width: '100%',
+                                background: C.successBadgeBg,
+                                border: `1px dashed ${C.successBadgeBorder}`,
+                                color: C.good,
+                                padding: '9px 8px',
+                                borderRadius: 6,
+                                cursor: 'pointer',
+                                fontWeight: 600,
+                                fontSize: 12,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: 6,
+                                marginBottom: 10
+                              }}
+                            >
+                              <span>➕</span> Gün İçinde 2. Yeni İşi Başlat
+                            </button>
+                          ) : (
+                            <div style={{ background: C.secondJobBg, border: `1px solid ${C.secondJobBorder}`, borderRadius: 6, padding: 10, marginBottom: 10 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, borderBottom: `1px solid ${C.secondJobBorder}`, paddingBottom: 6 }}>
+                                <span style={{ fontSize: 11.5, color: C.secondJobHeader, fontWeight: 700 }}>
+                                  ⚡ 2. İŞ (GÜN İÇİNDE BAŞLAYAN YENİ İŞ)
+                                </span>
+                                
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <button
+                                    onClick={() => updateEntry(selectedKey, s.id, 'secondJobStatus', entry.secondJobStatus === 'in_progress' ? 'completed' : 'in_progress')}
+                                    style={{
+                                      background: entry.secondJobStatus === 'in_progress' ? C.warningBadgeBg : C.successBadgeBg,
+                                      border: `1px solid ${entry.secondJobStatus === 'in_progress' ? C.warningBadgeBorder : C.successBadgeBorder}`,
+                                      color: entry.secondJobStatus === 'in_progress' ? C.copper : C.good,
+                                      fontSize: 10.5,
+                                      padding: '2px 6px',
+                                      borderRadius: 4,
+                                      cursor: 'pointer',
+                                      fontWeight: 600
+                                    }}
+                                  >
+                                    {entry.secondJobStatus === 'in_progress' ? '⏳ Devam Ediyor' : '✓ Tamamlandı'}
+                                  </button>
+                                  
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleSecondJob(selectedKey, s.id, entry.actualEndTime, s.standardHours)}
+                                    style={{
+                                      background: C.dangerBadgeBg,
+                                      border: `1px solid ${C.dangerBadgeBorder}`,
+                                      color: C.bad,
+                                      fontSize: 10.5,
+                                      padding: '2px 6px',
+                                      cursor: 'pointer',
+                                      borderRadius: 4,
+                                      fontWeight: 600
+                                    }}
+                                  >
+                                    ✕ Kaldır
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                                <span style={{ fontSize: 11, color: C.secondJobSubText, fontWeight: 500 }}>Yeni İş Standart:</span>
+                                <input
+                                  type="number" min="0" step="0.5" placeholder="a-s"
+                                  className="num-input num-input-sm" style={{ width: 70, padding: '3px 6px' }}
+                                  value={entry.secondJobStandard || ''}
+                                  onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobStandard', e.target.value)}
+                                />
+                                <span style={{ fontSize: 11, color: C.secondJobSubText }}>adam-saat</span>
+                              </div>
+
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, background: C.secondJobWagonBox, padding: '5px 8px', borderRadius: 4, border: `1px solid ${C.secondJobWagonBorder}` }}>
+                                <span style={{ fontSize: 11, color: C.secondJobWagonText, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", whiteSpace: 'nowrap' }}>🚆 2. İş Vagon No:</span>
+                                <input 
+                                  type="text"
+                                  placeholder={entry.wagonNo || "örn. V-102"}
+                                  value={entry.secondJobWagonNo || ''}
+                                  onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobWagonNo', e.target.value)}
+                                  style={{
+                                    flex: 1,
+                                    background: C.wagonInputBg,
+                                    border: `1px solid ${C.secondJobWagonBorder}`,
+                                    borderRadius: 4,
+                                    color: C.secondJobWagonText,
+                                    fontWeight: 600,
+                                    padding: '4px 6px',
+                                    fontSize: 11,
+                                    fontFamily: "'JetBrains Mono', monospace"
+                                  }}
+                                />
+                                {entry.secondJobWagonNo && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <span style={{ fontSize: 10, padding: '2px 5px', borderRadius: 4, background: entry.secondJobStatus === 'in_progress' ? C.warningBadgeBg : (isJob2Completed ? C.successBadgeBg : `${C.line}22`), color: entry.secondJobStatus === 'in_progress' ? C.secondJobWagonText : (isJob2Completed ? C.good : C.line), border: `1px solid ${entry.secondJobStatus === 'in_progress' ? C.secondJobWagonBorder : (isJob2Completed ? C.successBadgeBorder : `${C.line}44`)}`, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                      {entry.secondJobStatus === 'in_progress' ? '⏳ Devam' : (isJob2Completed ? '✓ Bitti' : 'İşlemde')}
+                                    </span>
+                                    <button
+                                      onClick={() => setSelectedWagonDetail(entry.secondJobWagonNo.trim())}
+                                      style={{ background: C.headerBtnBg, border: `1px solid ${C.border}`, borderRadius: 4, color: C.line, padding: '1px 4px', fontSize: 9.5, cursor: 'pointer', fontWeight: 600 }}
+                                    >
+                                      Detay
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, marginBottom: 4 }}>
+                                <div>
+                                  <div style={{ fontSize: 9.5, color: C.secondJobSubText, marginBottom: 3, textAlign: 'center' }}>2. Başlama</div>
+                                  <input type="time" className="num-input num-input-sm" value={entry.secondJobStartTime || ''} placeholder={entry.actualEndTime || '12:50'} onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobStartTime', e.target.value)} />
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: 9.5, color: C.secondJobHeader, marginBottom: 3, textAlign: 'center', fontWeight: 600 }}>Teorik Bitiş</div>
+                                  <div style={{ background: C.warningBadgeBg, border: `1px solid ${C.warningBadgeBorder}`, borderRadius: 4, padding: '5px 2px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: j2Est?.mode === 'exceeds' || j2Est?.mode === 'carryover' ? C.bad : j2Est?.mode?.includes('weekend') ? C.weekend : j2Est?.mode === 'overtime' ? C.copper : C.good, fontWeight: 700 }}>
+                                    {j2Est ? j2Est.label : '—'}
+                                  </div>
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: 9.5, color: C.secondJobSubText, marginBottom: 3, textAlign: 'center' }}>Gerçek Bitiş</div>
+                                  <input type="time" className="num-input num-input-sm" value={entry.secondJobActualEndTime || ''} placeholder="16:55" onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobActualEndTime', e.target.value)} />
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: 9.5, color: C.secondJobSubText, marginBottom: 3, textAlign: 'center' }}>Harcanan</div>
+                                  <div style={{ background: C.wagonInputBg, border: `1px solid ${C.warningBadgeBorder}`, borderRadius: 4, padding: '5px 2px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: C.secondJobHeader, fontWeight: 700 }}>
+                                    {entry.secondJobActual ? `${parseFloat(entry.secondJobActual).toFixed(1)} a-s` : '—'}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {entry.secondJobStatus === 'in_progress' && cDay?.job2Remainder > 0.05 && (
+                                <div style={{ fontSize: 11, color: C.secondJobHeader, fontFamily: "'JetBrains Mono', monospace", marginTop: 6, fontWeight: 600 }}>
+                                  ↷ 2. İşten devredecek: {cDay.job2Remainder.toFixed(1)} a-s
+                                </div>
+                              )}
                             </div>
                           )}
 
-                          {/* HAFTAİÇİ DİĞER GÜNLER MESAİ PANELİ */}
-                          {dayIndex !== 4 && activeEst?.needsDecision && (
-                            <div style={{ marginBottom: 10, background: C.otWeekdayBg, padding: 10, borderRadius: 6, border: `1px solid ${C.otWeekdayBorder}` }}>
-                              <div style={{ fontSize: 11, color: C.otWeekdayText, marginBottom: 6, fontWeight: 600 }}>
-                                ⚠ {activeJobName} normal mesaide (16:55) bitmiyor — mesai yapılacak mı?
-                              </div>
-                              <div style={{ display: 'flex', gap: 6 }}>
-                                <button
-                                  onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'yes')}
-                                  style={{ flex: 1, fontSize: 11, fontWeight: 700, padding: '6px 0', cursor: 'pointer', borderRadius: 4, background: C.warningBadgeBg, border: `1px solid ${C.warningBadgeBorder}`, color: C.copper }}
-                                >
-                                  Mesai Yapılacak
-                                </button>
-                                <button
-                                  onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'no')}
-                                  style={{ flex: 1, fontSize: 11, fontWeight: 700, padding: '6px 0', cursor: 'pointer', borderRadius: 4, background: C.dangerBadgeBg, border: `1px solid ${C.dangerBadgeBorder}`, color: C.bad }}
-                                >
-                                  Mesai Yapılmayacak
-                                </button>
-                              </div>
+                          {/* Toplam Gerçekleşen Ozet */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, padding: '6px 10px', background: C.totalBoxBg, border: `1px solid ${C.totalBoxBorder}`, borderRadius: 6 }}>
+                            <span style={{ fontSize: 11, color: C.totalBoxText, fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>Günün Toplamı:</span>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: C.paper, fontFamily: "'JetBrains Mono', monospace" }}>
+                              {totalActual > 0 ? `${totalActual.toFixed(1)} a-s` : '—'}
+                            </span>
+                          </div>
+
+                          {/* EK MESAİ & HAFTASONU BİLDİRİMLERİ */}
+                          {isCardFullyFinishedOnTime ? (
+                            <div style={{ marginBottom: 8, padding: '6px 10px', background: C.successBadgeBg, border: `1px solid ${C.successBadgeBorder}`, borderRadius: 6, fontSize: 11, color: C.good, display: 'flex', alignItems: 'center', gap: 6, fontWeight: 500 }}>
+                              <span>✓</span> İş vardiya içinde (16:55) başarıyla tamamlandı.
+                            </div>
+                          ) : (
+                            <>
+                              {/* CUMA GÜNÜ MESAİ / HAFTASONU KARAR PANELİ */}
+                              {dayIndex === 4 && (
+                                <div style={{ marginBottom: 10, background: C.otFridayBg, padding: 10, borderRadius: 6, border: `1px solid ${C.otFridayBorder}` }}>
+                                  <div style={{ fontSize: 11, color: C.otFridayText, marginBottom: 6, fontWeight: 600 }}>
+                                    ⚠ {activeJobName} için Cuma Mesai / Haftasonu Planı:
+                                  </div>
+                                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                                    <button
+                                      onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'friday_ot')}
+                                      style={{ flex: 1, minWidth: 95, fontSize: 10.5, fontWeight: 600, padding: '5px 4px', cursor: 'pointer', borderRadius: 4, background: entry.overtimeDecision === 'friday_ot' ? C.copper : C.panel, border: `1px solid ${entry.overtimeDecision === 'friday_ot' ? C.copper : C.border}`, color: entry.overtimeDecision === 'friday_ot' ? (theme === 'light' ? '#FFFFFF' : '#0B0F17') : C.copper }}
+                                    >
+                                      Cuma Akşamı (17:25–20:00)
+                                    </button>
+                                    <button
+                                      onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'sat_only')}
+                                      style={{ flex: 1, minWidth: 95, fontSize: 10.5, fontWeight: 600, padding: '5px 4px', cursor: 'pointer', borderRadius: 4, background: entry.overtimeDecision === 'sat_only' ? C.weekend : C.panel, border: `1px solid ${entry.overtimeDecision === 'sat_only' ? C.weekend : C.border}`, color: entry.overtimeDecision === 'sat_only' ? (theme === 'light' ? '#FFFFFF' : '#0B0F17') : C.weekend }}
+                                    >
+                                      Cumartesi (06:55–16:55)
+                                    </button>
+                                    <button
+                                      onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'no')}
+                                      style={{ flex: 1, minWidth: 70, fontSize: 10.5, fontWeight: 600, padding: '5px 4px', cursor: 'pointer', borderRadius: 4, background: entry.overtimeDecision === 'no' ? C.bad : C.panel, border: `1px solid ${entry.overtimeDecision === 'no' ? C.bad : C.border}`, color: entry.overtimeDecision === 'no' ? (theme === 'light' ? '#FFFFFF' : '#0B0F17') : C.bad }}
+                                    >
+                                      Mesai Yok
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* HAFTAİÇİ DİĞER GÜNLER MESAİ PANELİ */}
+                              {dayIndex !== 4 && activeEst?.needsDecision && (
+                                <div style={{ marginBottom: 10, background: C.otWeekdayBg, padding: 10, borderRadius: 6, border: `1px solid ${C.otWeekdayBorder}` }}>
+                                  <div style={{ fontSize: 11, color: C.otWeekdayText, marginBottom: 6, fontWeight: 600 }}>
+                                    ⚠ {activeJobName} normal mesaide (16:55) bitmiyor — mesai yapılacak mı?
+                                  </div>
+                                  <div style={{ display: 'flex', gap: 6 }}>
+                                    <button
+                                      onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'yes')}
+                                      style={{ flex: 1, fontSize: 11, fontWeight: 700, padding: '6px 0', cursor: 'pointer', borderRadius: 4, background: C.warningBadgeBg, border: `1px solid ${C.warningBadgeBorder}`, color: C.copper }}
+                                    >
+                                      Mesai Yapılacak
+                                    </button>
+                                    <button
+                                      onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'no')}
+                                      style={{ flex: 1, fontSize: 11, fontWeight: 700, padding: '6px 0', cursor: 'pointer', borderRadius: 4, background: C.dangerBadgeBg, border: `1px solid ${C.dangerBadgeBorder}`, color: C.bad }}
+                                    >
+                                      Mesai Yapılmayacak
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+
+                              {dayIndex !== 4 && (activeEst?.mode === 'overtime' || activeEst?.mode === 'exceeds' || activeEst?.mode === 'carryover') && !activeEst?.needsDecision && (
+                                <div style={{ marginBottom: 8, background: C.otOtherBg, padding: '7px 10px', borderRadius: 6, border: `1px solid ${C.border}` }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                                    <span style={{ fontSize: 10.5, color: C.dim, fontWeight: 500 }}>{activeJobName} Mesai Kararı:</span>
+                                    <button onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'yes')} style={{ fontSize: 10.5, fontWeight: 600, padding: '3px 8px', cursor: 'pointer', borderRadius: 4, background: entry.overtimeDecision === 'yes' ? C.copper : C.panel, border: `1px solid ${entry.overtimeDecision === 'yes' ? C.copper : C.border}`, color: entry.overtimeDecision === 'yes' ? (theme === 'light' ? '#FFFFFF' : '#0B0F17') : C.dim }}>Mesai Yapılacak</button>
+                                    <button onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'no')} style={{ fontSize: 10.5, fontWeight: 600, padding: '3px 8px', cursor: 'pointer', borderRadius: 4, background: entry.overtimeDecision === 'no' ? C.bad : C.panel, border: `1px solid ${entry.overtimeDecision === 'no' ? C.bad : C.border}`, color: entry.overtimeDecision === 'no' ? (theme === 'light' ? '#FFFFFF' : '#0B0F17') : C.dim }}>Mesai Yapılmayacak</button>
+                                  </div>
+                                  {activeEst?.mode === 'overtime' && (
+                                    <div style={{ fontSize: 10.5, color: C.copper, fontWeight: 500 }}>⚠ Mesai yapılacak — {activeJobName} normal mesaide bitmiyor (17:25–20:00 çalışma)</div>
+                                  )}
+                                  {activeEst?.mode === 'exceeds' && (
+                                    <div style={{ fontSize: 10.5, color: C.bad, fontWeight: 500 }}>⚠ Mesai yapılsa da (20:00'a kadar) yetişmiyor — ≈{Math.round(activeEst.overMinutes)} dk aşım, kalan kısım yarına devredebilir</div>
+                                  )}
+                                  {activeEst?.mode === 'carryover' && (
+                                    <div style={{ fontSize: 10.5, color: C.bad, fontWeight: 500 }}>⚠ Mesai yapılmayacak — {activeJobName} normal mesaide (16:55) biten kısımla kalıp yarına devredecek</div>
+                                  )}
+                                </div>
+                              )}
+                            </>
+                          )}
+
+                          <DimensionBar eff={eff} />
+
+                          {showStatus && (
+                            <div style={{ marginTop: 8, fontSize: 11, fontFamily: "'JetBrains Mono', monospace", display: 'flex', flexDirection: 'column', gap: 2 }}>
+                              {totalStandard == null ? (
+                                <span style={{ color: C.dim }}>Standart girilmedi</span>
+                              ) : lossHours == null ? (
+                                <span style={{ color: C.dim }}>Bitiş saati girilmedi</span>
+                              ) : lossHours > 0.05 ? (
+                                <span style={{ color: C.bad, fontWeight: 600 }}>Kayıp: {lossHours.toFixed(1)} a-s</span>
+                              ) : lossHours < -0.05 ? (
+                                <span style={{ color: C.good, fontWeight: 600 }}>Tasarruf: {(-lossHours).toFixed(1)} a-s (Standart altında tamamlandı)</span>
+                              ) : (
+                                <span style={{ color: C.good, fontWeight: 600 }}>Tam zamanında tamamlandı</span>
+                              )}
+                              {lossPercent != null && lossPercent > allowancePercent && (
+                                <span style={{ color: C.bad, fontWeight: 600 }}>⚠ %{lossPercent.toFixed(0)} kayıp payı (%{allowancePercent} aşıldı)</span>
+                              )}
                             </div>
                           )}
 
-                          {dayIndex !== 4 && (activeEst?.mode === 'overtime' || activeEst?.mode === 'exceeds' || activeEst?.mode === 'carryover') && !activeEst?.needsDecision && (
-                            <div style={{ marginBottom: 8, background: C.otOtherBg, padding: '7px 10px', borderRadius: 6, border: `1px solid ${C.border}` }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                                <span style={{ fontSize: 10.5, color: C.dim, fontWeight: 500 }}>{activeJobName} Mesai Kararı:</span>
-                                <button onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'yes')} style={{ fontSize: 10.5, fontWeight: 600, padding: '3px 8px', cursor: 'pointer', borderRadius: 4, background: entry.overtimeDecision === 'yes' ? C.copper : C.panel, border: `1px solid ${entry.overtimeDecision === 'yes' ? C.copper : C.border}`, color: entry.overtimeDecision === 'yes' ? (theme === 'light' ? '#FFFFFF' : '#0B0F17') : C.dim }}>Mesai Yapılacak</button>
-                                <button onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'no')} style={{ fontSize: 10.5, fontWeight: 600, padding: '3px 8px', cursor: 'pointer', borderRadius: 4, background: entry.overtimeDecision === 'no' ? C.bad : C.panel, border: `1px solid ${entry.overtimeDecision === 'no' ? C.bad : C.border}`, color: entry.overtimeDecision === 'no' ? (theme === 'light' ? '#FFFFFF' : '#0B0F17') : C.dim }}>Mesai Yapılmayacak</button>
+                          {/* ADIM 2: DURUŞ / GECİKME NEDENİ SEÇİCİ */}
+                          {(lossHours > 0.05 || entry.job1Status === 'in_progress' || entry.downtimeReason) && (
+                            <div style={{ marginTop: 8, padding: '7px 9px', background: C.warningBadgeBg, border: `1px solid ${C.warningBadgeBorder}`, borderRadius: 6 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                                <span style={{ fontSize: 10.5, fontWeight: 700, color: C.copper, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                  <span>⚠️</span> Kayıp / Duruş Nedeni:
+                                </span>
+                                {entry.downtimeReason && (
+                                  <button
+                                    onClick={() => updateEntry(selectedKey, s.id, 'downtimeReason', '')}
+                                    style={{ background: 'transparent', border: 'none', color: C.dim, cursor: 'pointer', fontSize: 11, padding: 0 }}
+                                    title="Nedeni Temizle"
+                                  >
+                                    ✕ Kaldır
+                                  </button>
+                                )}
                               </div>
-                              {activeEst?.mode === 'overtime' && (
-                                <div style={{ fontSize: 10.5, color: C.copper, fontWeight: 500 }}>⚠ Mesai yapılacak — {activeJobName} normal mesaide bitmiyor (17:25–20:00 çalışma)</div>
-                              )}
-                              {activeEst?.mode === 'exceeds' && (
-                                <div style={{ fontSize: 10.5, color: C.bad, fontWeight: 500 }}>⚠ Mesai yapılsa da (20:00'a kadar) yetişmiyor — ≈{Math.round(activeEst.overMinutes)} dk aşım, kalan kısım yarına devredebilir</div>
-                              )}
-                              {activeEst?.mode === 'carryover' && (
-                                <div style={{ fontSize: 10.5, color: C.bad, fontWeight: 500 }}>⚠ Mesai yapılmayacak — {activeJobName} normal mesaide (16:55) biten kısımla kalıp yarına devredecek</div>
-                              )}
+                              <select
+                                value={entry.downtimeReason || ''}
+                                onChange={(e) => updateEntry(selectedKey, s.id, 'downtimeReason', e.target.value)}
+                                style={{
+                                  width: '100%',
+                                  background: C.wagonInputBg,
+                                  border: `1px solid ${C.border}`,
+                                  borderRadius: 4,
+                                  color: C.paper,
+                                  fontSize: 11.5,
+                                  padding: '5px 7px',
+                                  fontFamily: 'inherit',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                <option value="">— Neden Belirtilmedi —</option>
+                                {DOWNTIME_REASONS.map((r) => (
+                                  <option key={r.id} value={r.id}>{r.label}</option>
+                                ))}
+                              </select>
                             </div>
                           )}
+
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
+                            <div>
+                              <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center', fontWeight: 500 }}>Hedef adet (ops.)</div>
+                              <input type="number" min="0" className="num-input num-input-sm" placeholder="—" value={entry.target || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'target', e.target.value)} />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center', fontWeight: 500 }}>Üretilen adet (ops.)</div>
+                              <input type="number" min="0" className="num-input num-input-sm" placeholder="—" value={entry.produced || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'produced', e.target.value)} />
+                            </div>
+                          </div>
                         </>
                       )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
 
-                      <DimensionBar eff={eff} />
+            {/* Final Temizlik Teslim Tahmini */}
+            {finalCascade.some((c) => c) && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
+                  Final Temizlik — Teslim Tahmini ({DAY_NAMES[dayIndex]} {selectedDate.getDate()} {MONTHS[selectedDate.getMonth()]})
+                </div>
+                <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 18, boxShadow: C.cardShadow }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 14 }}>
+                    {finalCascade.map((c, i) => (
+                      <React.Fragment key={i}>
+                        <div style={{ minWidth: 120, flex: 1, background: C.cascadeBoxBg, padding: 10, borderRadius: 6, border: `1px solid ${C.cascadeBoxBorder}` }}>
+                          <div style={{ fontSize: 11, color: C.dim, marginBottom: 3, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 600 }}>{c ? c.station.name.replace('Final Temizlik - ', '') : FINAL_STAGES[i].replace('Final Temizlik - ', '')}</span>
+                            {c?.wagonNo && (
+                              <span 
+                                onClick={() => setSelectedWagonDetail(c.wagonNo)}
+                                style={{ color: C.line, background: C.totalBoxBg, border: `1px solid ${C.totalBoxBorder}`, padding: '1px 5px', borderRadius: 3, fontWeight: 700, fontSize: 10, cursor: 'pointer' }}
+                                title="Vagon Detayını Gör"
+                              >
+                                #{c.wagonNo}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13.5, color: C.paper }}>
+                            {c ? minToTime(c.startMin) : '—'} → <span style={{ color: c?.mode === 'exceeds' || c?.mode === 'carryover' ? C.bad : c?.mode?.includes('weekend') ? C.weekend : c?.mode === 'overtime' || c?.mode === 'pending' || c?.mode === 'pending_friday' ? C.copper : C.good, fontWeight: 700 }}>{c ? c.label : '—'}</span>
+                          </div>
+                        </div>
+                        {i < FINAL_STAGES.length - 1 && <div style={{ display: 'flex', alignItems: 'center', color: C.cascadeArrow, fontSize: 16 }}>→</div>}
+                      </React.Fragment>
+                    ))}
+                  </div>
+                  <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 11.5, color: C.dim, fontWeight: 600, textTransform: 'uppercase' }}>Tahmini Teslim Saati:</span>
+                      {(() => {
+                        const last = [...finalCascade].reverse().find((c) => c && c.finishMin != null);
+                        const lastColor = last?.mode === 'exceeds' ? C.bad : last?.mode?.includes('weekend') ? C.weekend : last?.mode === 'overtime' ? C.copper : C.good;
+                        return (
+                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, fontWeight: 700, color: lastColor }}>
+                            {last ? last.label : '—'}
+                          </span>
+                        );
+                      })()}
+                    </div>
+                    {(() => {
+                      const activeWagon = finalCascade.find(c => c?.wagonNo)?.wagonNo;
+                      return activeWagon ? (
+                        <div 
+                          onClick={() => setSelectedWagonDetail(activeWagon)}
+                          style={{ background: C.totalBoxBg, border: `1px solid ${C.totalBoxBorder}`, color: C.line, padding: '5px 12px', borderRadius: 6, fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
+                          title="Vagon Süreç Detayını Aç"
+                        >
+                          <span>🚆 Teslimattaki Vagon:</span>
+                          <span style={{ color: C.paper, textDecoration: 'underline' }}>#{activeWagon}</span>
+                        </div>
+                      ) : null;
+                    })()}
+                  </div>
+                </div>
+              </div>
+            )}
 
-                      {showStatus && (
-                        <div style={{ marginTop: 8, fontSize: 11, fontFamily: "'JetBrains Mono', monospace", display: 'flex', flexDirection: 'column', gap: 2 }}>
-                          {totalStandard == null ? (
-                            <span style={{ color: C.dim }}>Standart girilmedi</span>
-                          ) : lossHours == null ? (
-                            <span style={{ color: C.dim }}>Bitiş saati girilmedi</span>
-                          ) : lossHours > 0.05 ? (
-                            <span style={{ color: C.bad, fontWeight: 600 }}>Kayıp: {lossHours.toFixed(1)} a-s</span>
-                          ) : lossHours < -0.05 ? (
-                            <span style={{ color: C.good, fontWeight: 600 }}>Tasarruf: {(-lossHours).toFixed(1)} a-s (Standart altında tamamlandı)</span>
-                          ) : (
-                            <span style={{ color: C.good, fontWeight: 600 }}>Tam zamanında tamamlandı</span>
-                          )}
-                          {lossPercent != null && lossPercent > allowancePercent && (
-                            <span style={{ color: C.bad, fontWeight: 600 }}>⚠ %{lossPercent.toFixed(0)} kayıp payı (%{allowancePercent} aşıldı)</span>
-                          )}
-                        </div>
-                      )}
+            {/* Grup Toplamlari */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginBottom: 20 }}>
+              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 18px', boxShadow: C.cardShadow }}>
+                <GroupTag group="taslama" />
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 700, color: C.groupA, marginTop: 6 }}>
+                  {groupTotals.taslama.actual.toFixed(1)} <span style={{ fontSize: 12, color: C.dim }}>a-s</span>
+                </div>
+                <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>Taşlama toplam gerçekleşen</div>
+              </div>
+              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 18px', boxShadow: C.cardShadow }}>
+                <GroupTag group="kaynakmontaj" />
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 700, color: C.groupB, marginTop: 6 }}>
+                  {groupTotals.kaynakmontaj.actual.toFixed(1)} <span style={{ fontSize: 12, color: C.dim }}>a-s</span>
+                </div>
+                <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>Kaynak-Montaj toplam gerçekleşen</div>
+              </div>
+              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 18px', boxShadow: C.cardShadow }}>
+                <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: C.bad, border: `1px solid ${C.dangerBadgeBorder}`, background: C.dangerBadgeBg, borderRadius: 4, padding: '2px 6px', textTransform: 'uppercase', fontWeight: 600 }}>Devamsızlık</span>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 700, color: C.bad, marginTop: 6 }}>
+                  {absenteeismTotal.persons} <span style={{ fontSize: 12, color: C.dim }}>kişi-gün</span>
+                </div>
+                <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>{absenteeismTotal.hours.toFixed(1)} adam-saat kayıp</div>
+              </div>
+              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 18px', boxShadow: C.cardShadow }}>
+                <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: C.copper, border: `1px solid ${C.warningBadgeBorder}`, background: C.warningBadgeBg, borderRadius: 4, padding: '2px 6px', textTransform: 'uppercase', fontWeight: 600 }}>Verim Kaybı</span>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 700, color: C.copper, marginTop: 6 }}>
+                  {lossTotal.toFixed(1)} <span style={{ fontSize: 12, color: C.dim }}>a-s</span>
+                </div>
+                <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>Standardı aşan süre</div>
+              </div>
+            </div>
 
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
-                        <div>
-                          <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center', fontWeight: 500 }}>Hedef adet (ops.)</div>
-                          <input type="number" min="0" className="num-input num-input-sm" placeholder="—" value={entry.target || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'target', e.target.value)} />
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center', fontWeight: 500 }}>Üretilen adet (ops.)</div>
-                          <input type="number" min="0" className="num-input num-input-sm" placeholder="—" value={entry.produced || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'produced', e.target.value)} />
-                        </div>
+            {/* Ek Mesai Gereken Istasyonlar */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
+                Ek Mesai Gerekebilecek İstasyonlar
+              </div>
+              {overtimeStations.length === 0 ? (
+                <div style={{ background: C.successBadgeBg, border: `1px solid ${C.successBadgeBorder}`, borderRadius: 8, padding: 12, fontSize: 13, color: C.good, fontWeight: 500 }}>
+                  ✓ Bu hafta ek mesai gereken istasyon görünmüyor.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {overtimeStations.map((s) => (
+                    <div key={s.id} style={{ background: C.dangerBadgeBg, border: `1px solid ${C.dangerBadgeBorder}`, borderRadius: 8, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <GroupTag group={s.group} />
+                        <span style={{ fontWeight: 600, color: C.paper }}>{s.name}</span>
                       </div>
-                    </>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: C.bad, fontWeight: 600 }}>
+                        ≈{s.totalCapacityShortfall.toFixed(1)} a-s kapasite açığı{s.avgPresent > 0 ? ` · ≈${(s.totalCapacityShortfall / s.avgPresent).toFixed(1)} saat/kişi` : ''}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Haftalik Ozet Tablosu */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.5 }}>Haftalık Özet — İstasyon Bazlı</span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={printReport} style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 6, color: C.paper, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontWeight: 600, boxShadow: C.cardShadow }}>Yazdır / PDF</button>
+                <button onClick={exportCSV} style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 6, color: C.paper, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontWeight: 600, boxShadow: C.cardShadow }}>CSV İndir</button>
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 10 }}>
+              {stationSummaries.map((s, i) => (
+                <div key={s.id} style={{ background: C.summaryCardBg, border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px 14px', boxShadow: C.cardShadow, opacity: s.active === false ? 0.6 : 1 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: C.dim }}>{String(i + 1).padStart(2, '0')}</span>
+                      <span style={{ fontWeight: 600, fontSize: 13, color: C.paper }}>
+                        {s.name} {s.active === false && <span style={{ fontSize: 11, color: C.bad }}>(Pasif)</span>}
+                      </span>
+                    </div>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 15, fontWeight: 700, color: effColor(s.avg, C) }}>
+                      {s.avg === null ? (s.idleDays > 0 ? 'Boşta' : '—') : `${Math.round(s.avg)}%`}
+                    </span>
+                  </div>
+                  <div style={{ marginBottom: 6 }}><GroupTag group={s.group} /></div>
+                  <DimensionBar eff={s.avg} />
+                  <div style={{ fontSize: 11, color: C.dim, marginTop: 8 }}>
+                    {s.days > 0 ? `${s.totalActual.toFixed(1)} a-s gerçekleşen${s.totalStandardExpected > 0 ? ` / ${s.totalStandardExpected.toFixed(1)} a-s hedef` : ''}` : (s.idleDays > 0 ? `${s.idleDays} gün planlı boşta` : 'Veri yok')}
+                  </div>
+                  {s.wagonsList && s.wagonsList.length > 0 && (
+                    <div style={{ marginTop: 8, paddingTop: 6, borderTop: `1px solid ${C.border}`, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {s.wagonsList.map((w) => {
+                        const last = w.jobs[w.jobs.length - 1];
+                        const isDone = last.status === 'Tamamlandı';
+                        return (
+                          <span 
+                            key={w.name} 
+                            onClick={() => setSelectedWagonDetail(w.name)}
+                            title={`${last.day} - ${last.job}: ${last.status} (Tıkla Detayı Gör)`} 
+                            style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", padding: '2px 6px', borderRadius: 4, background: isDone ? C.successBadgeBg : C.warningBadgeBg, color: isDone ? C.good : C.copper, border: `1px solid ${isDone ? C.successBadgeBorder : C.warningBadgeBorder}`, fontWeight: 600, cursor: 'pointer' }}
+                          >
+                            🚆 #{w.name}: {isDone ? '✓' : '⏳'}
+                          </span>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Final Temizlik Teslim Tahmini */}
-        {finalCascade.some((c) => c) && (
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
-              Final Temizlik — Teslim Tahmini ({DAY_NAMES[dayIndex]} {selectedDate.getDate()} {MONTHS[selectedDate.getMonth()]})
+              ))}
             </div>
-            <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 18, boxShadow: C.cardShadow }}>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 14 }}>
-                {finalCascade.map((c, i) => (
-                  <React.Fragment key={i}>
-                    <div style={{ minWidth: 120, flex: 1, background: C.cascadeBoxBg, padding: 10, borderRadius: 6, border: `1px solid ${C.cascadeBoxBorder}` }}>
-                      <div style={{ fontSize: 11, color: C.dim, marginBottom: 3, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                        <span style={{ fontWeight: 600 }}>{c ? c.station.name.replace('Final Temizlik - ', '') : FINAL_STAGES[i].replace('Final Temizlik - ', '')}</span>
-                        {c?.wagonNo && (
-                          <span style={{ color: C.line, background: C.totalBoxBg, border: `1px solid ${C.totalBoxBorder}`, padding: '1px 5px', borderRadius: 3, fontWeight: 700, fontSize: 10 }}>
-                            #{c.wagonNo}
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13.5, color: C.paper }}>
-                        {c ? minToTime(c.startMin) : '—'} → <span style={{ color: c?.mode === 'exceeds' || c?.mode === 'carryover' ? C.bad : c?.mode?.includes('weekend') ? C.weekend : c?.mode === 'overtime' || c?.mode === 'pending' || c?.mode === 'pending_friday' ? C.copper : C.good, fontWeight: 700 }}>{c ? c.label : '—'}</span>
-                      </div>
-                    </div>
-                    {i < FINAL_STAGES.length - 1 && <div style={{ display: 'flex', alignItems: 'center', color: C.cascadeArrow, fontSize: 16 }}>→</div>}
-                  </React.Fragment>
-                ))}
+          </>
+        )}
+
+        {/* 2. GÖRÜNÜM: VAGON İZLEME MATRİSİ (ADIM 1) */}
+        {mainView === 'wagons' && (
+          <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 20, boxShadow: C.cardShadow }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: C.paper }}>🚆 Vagon İzleme Matrisi & Süreç Takibi</div>
+                <div style={{ fontSize: 12, color: C.dim }}>Bu hafta hat üzerinde işlem gören tüm vagonların aşama ve durum tablosu</div>
               </div>
-              <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 11.5, color: C.dim, fontWeight: 600, textTransform: 'uppercase' }}>Tahmini Teslim Saati:</span>
-                  {(() => {
-                    const last = [...finalCascade].reverse().find((c) => c && c.finishMin != null);
-                    const lastColor = last?.mode === 'exceeds' ? C.bad : last?.mode?.includes('weekend') ? C.weekend : last?.mode === 'overtime' ? C.copper : C.good;
-                    return (
-                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, fontWeight: 700, color: lastColor }}>
-                        {last ? last.label : '—'}
-                      </span>
-                    );
-                  })()}
+
+              {/* Vagon Filtreleri */}
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => setWagonStatusFilter('all')}
+                  style={{ background: wagonStatusFilter === 'all' ? C.line : C.panelAlt, color: wagonStatusFilter === 'all' ? (theme === 'light' ? '#fff' : '#0B0F17') : C.paper, border: `1px solid ${C.border}`, borderRadius: 6, padding: '5px 12px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Tümü ({wagonsCatalog.length})
+                </button>
+                <button
+                  onClick={() => setWagonStatusFilter('in_progress')}
+                  style={{ background: wagonStatusFilter === 'in_progress' ? C.copper : C.panelAlt, color: wagonStatusFilter === 'in_progress' ? '#fff' : C.paper, border: `1px solid ${C.border}`, borderRadius: 6, padding: '5px 12px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Devam Edenler ({wagonsCatalog.filter(w => w.latestStatus !== 'Tamamlandı').length})
+                </button>
+                <button
+                  onClick={() => setWagonStatusFilter('completed')}
+                  style={{ background: wagonStatusFilter === 'completed' ? C.good : C.panelAlt, color: wagonStatusFilter === 'completed' ? '#fff' : C.paper, border: `1px solid ${C.border}`, borderRadius: 6, padding: '5px 12px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Tamamlananlar ({wagonsCatalog.filter(w => w.latestStatus === 'Tamamlandı').length})
+                </button>
+              </div>
+            </div>
+
+            {filteredWagons.length === 0 ? (
+              <div style={{ padding: '36px 0', textAlign: 'center', color: C.dim, fontSize: 13 }}>
+                Arama kriterine uygun vagon bulunamadı veya henüz vagon numarası girilmedi.
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ borderBottom: `2px solid ${C.border}`, textAlign: 'left' }}>
+                      <th style={{ padding: '10px 12px', color: C.dim }}>Vagon No</th>
+                      <th style={{ padding: '10px 12px', color: C.dim }}>Başlangıç</th>
+                      <th style={{ padding: '10px 12px', color: C.dim }}>İstasyon Süreci</th>
+                      <th style={{ padding: '10px 12px', color: C.dim, textAlign: 'right' }}>Toplam a-s</th>
+                      <th style={{ padding: '10px 12px', color: C.dim, textAlign: 'center' }}>Verim</th>
+                      <th style={{ padding: '10px 12px', color: C.dim, textAlign: 'center' }}>Son Durum</th>
+                      <th style={{ padding: '10px 12px', color: C.dim, textAlign: 'right' }}>İşlem</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredWagons.map((w) => (
+                      <tr key={w.wagonNo} style={{ borderBottom: `1px solid ${C.border}`, transition: 'background 0.15s' }}>
+                        <td style={{ padding: '12px', fontWeight: 700, color: C.line, fontFamily: "'JetBrains Mono', monospace", fontSize: 13.5 }}>
+                          #{w.wagonNo}
+                        </td>
+                        <td style={{ padding: '12px', color: C.paper, fontWeight: 500 }}>
+                          {w.firstDay}
+                        </td>
+                        <td style={{ padding: '12px' }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                            {w.steps.map((st, idx) => (
+                              <span key={idx} style={{ fontSize: 10.5, padding: '2px 6px', borderRadius: 4, background: st.isDone ? C.successBadgeBg : C.warningBadgeBg, color: st.isDone ? C.good : C.copper, border: `1px solid ${st.isDone ? C.successBadgeBorder : C.warningBadgeBorder}`, fontWeight: 600 }}>
+                                {st.stationName} ({st.day})
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: C.paper }}>
+                          {w.totalActual.toFixed(1)} a-s
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: effColor(w.overallEff, C) }}>
+                          {w.overallEff != null ? `${Math.round(w.overallEff)}%` : '—'}
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'center' }}>
+                          <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, background: w.latestStatus === 'Tamamlandı' ? C.successBadgeBg : C.warningBadgeBg, color: w.latestStatus === 'Tamamlandı' ? C.good : C.copper, border: `1px solid ${w.latestStatus === 'Tamamlandı' ? C.successBadgeBorder : C.warningBadgeBorder}`, fontWeight: 600 }}>
+                            {w.latestStatus}
+                          </span>
+                        </td>
+                        <td style={{ padding: '12px', textAlign: 'right' }}>
+                          <button
+                            onClick={() => setSelectedWagonDetail(w.wagonNo)}
+                            style={{ background: C.headerBtnBg, border: `1px solid ${C.border}`, borderRadius: 6, color: C.line, padding: '4px 10px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}
+                          >
+                            Detay ➔
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 3. GÖRÜNÜM: YÖNETİCİ GRAFİKLERİ VE KPI DASHBOARD'U (ADIM 4) */}
+        {mainView === 'analytics' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            
+            {/* Üst 4 KPI Kartı */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, boxShadow: C.cardShadow }}>
+                <div style={{ fontSize: 11.5, color: C.dim, textTransform: 'uppercase', fontWeight: 600 }}>Fabrika Toplam Üretim</div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, fontWeight: 700, color: C.line, marginTop: 4 }}>
+                  {(groupTotals.taslama.actual + groupTotals.kaynakmontaj.actual).toFixed(1)} <span style={{ fontSize: 13, color: C.dim }}>a-s</span>
                 </div>
-                {(() => {
-                  const activeWagon = finalCascade.find(c => c?.wagonNo)?.wagonNo;
-                  return activeWagon ? (
-                    <div style={{ background: C.totalBoxBg, border: `1px solid ${C.totalBoxBorder}`, color: C.line, padding: '5px 12px', borderRadius: 6, fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span>🚆 Teslimattaki Vagon:</span>
-                      <span style={{ color: C.paper }}>#{activeWagon}</span>
+                <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>Bu haftaki fiili çalışma hacmi</div>
+              </div>
+
+              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, boxShadow: C.cardShadow }}>
+                <div style={{ fontSize: 11.5, color: C.dim, textTransform: 'uppercase', fontWeight: 600 }}>Ortalama Fabrika Verimi</div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, fontWeight: 700, color: effColor(weekAvg, C), marginTop: 4 }}>
+                  {weekAvg === null ? '—' : Math.round(weekAvg)}%
+                </div>
+                <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>Hedef standart karşılaştırması</div>
+              </div>
+
+              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, boxShadow: C.cardShadow }}>
+                <div style={{ fontSize: 11.5, color: C.dim, textTransform: 'uppercase', fontWeight: 600 }}>Devamsızlık Kaybı</div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, fontWeight: 700, color: C.bad, marginTop: 4 }}>
+                  {absenteeismTotal.hours.toFixed(1)} <span style={{ fontSize: 13, color: C.dim }}>a-s</span>
+                </div>
+                <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>{absenteeismTotal.persons} kişi-gün iş gücü kaybı</div>
+              </div>
+
+              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, boxShadow: C.cardShadow }}>
+                <div style={{ fontSize: 11.5, color: C.dim, textTransform: 'uppercase', fontWeight: 600 }}>Duruş & Verim Kaybı</div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, fontWeight: 700, color: C.copper, marginTop: 4 }}>
+                  {lossTotal.toFixed(1)} <span style={{ fontSize: 13, color: C.dim }}>a-s</span>
+                </div>
+                <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>Duruş ve standardı aşan kayıplar</div>
+              </div>
+            </div>
+
+            {/* Grafikler Izgarası (Trend & Pareto) */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 16 }}>
+              <TrendChart weekDates={weekDates} data={data} carryoverMap={carryoverMap} stations={data.stations} />
+              <ParetoChart downtimeSummary={downtimeSummary} />
+            </div>
+
+            {/* Bölüm Karşılaştırması (Taşlama vs Kaynak-Montaj) & Haftanın Yıldızları */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 16 }}>
+              
+              {/* Taşlama vs Kaynak Kıyası */}
+              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 18, boxShadow: C.cardShadow }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.paper, marginBottom: 14 }}>⚖️ Taşlama vs. Kaynak-Montaj Karşılaştırması</div>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                      <span style={{ fontWeight: 600, color: C.groupA }}>Taşlama Bölümü</span>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: C.groupA }}>
+                        {groupTotals.taslama.actual.toFixed(1)} a-s
+                      </span>
                     </div>
-                  ) : null;
-                })()}
+                    <div style={{ height: 10, background: C.trackBg, borderRadius: 5, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${Math.min((groupTotals.taslama.actual / Math.max(groupTotals.taslama.actual + groupTotals.kaynakmontaj.actual, 1)) * 100, 100)}%`, background: C.groupA, borderRadius: 5 }} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                      <span style={{ fontWeight: 600, color: C.groupB }}>Kaynak-Montaj Bölümü</span>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: C.groupB }}>
+                        {groupTotals.kaynakmontaj.actual.toFixed(1)} a-s
+                      </span>
+                    </div>
+                    <div style={{ height: 10, background: C.trackBg, borderRadius: 5, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${Math.min((groupTotals.kaynakmontaj.actual / Math.max(groupTotals.taslama.actual + groupTotals.kaynakmontaj.actual, 1)) * 100, 100)}%`, background: C.groupB, borderRadius: 5 }} />
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: 14, paddingTop: 10, borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', fontSize: 11.5, color: C.dim }}>
+                  <span>Toplam Üretim Dağılım Payı</span>
+                  <span>{groupTotals.taslama.actual + groupTotals.kaynakmontaj.actual > 0 ? `%${Math.round((groupTotals.taslama.actual / (groupTotals.taslama.actual + groupTotals.kaynakmontaj.actual)) * 100)} Taşlama · %${Math.round((groupTotals.kaynakmontaj.actual / (groupTotals.taslama.actual + groupTotals.kaynakmontaj.actual)) * 100)} Kaynak` : 'Veri yok'}</span>
+                </div>
+              </div>
+
+              {/* Haftanın Yıldız İstasyonları (Top 3) */}
+              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 18, boxShadow: C.cardShadow }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.paper, marginBottom: 14 }}>🏆 Haftanın En Yüksek Verimli İstasyonları</div>
+                
+                {topStations.length === 0 ? (
+                  <div style={{ padding: '16px 0', textAlign: 'center', color: C.dim, fontSize: 12 }}>Bu hafta için henüz verim verisi bulunmuyor.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {topStations.map((s, idx) => {
+                      const medal = idx === 0 ? '🥇' : (idx === 1 ? '🥈' : '🥉');
+                      return (
+                        <div key={s.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: C.panelAlt, border: `1px solid ${C.border}`, borderRadius: 6 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 18 }}>{medal}</span>
+                            <div>
+                              <div style={{ fontWeight: 600, fontSize: 13, color: C.paper }}>{s.name}</div>
+                              <GroupTag group={s.group} />
+                            </div>
+                          </div>
+                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 16, fontWeight: 700, color: effColor(s.avg, C) }}>
+                            {Math.round(s.avg)}%
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           </div>
         )}
-
-        {/* Grup Toplamlari */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginBottom: 20 }}>
-          <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 18px', boxShadow: C.cardShadow }}>
-            <GroupTag group="taslama" />
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 700, color: C.groupA, marginTop: 6 }}>
-              {groupTotals.taslama.actual.toFixed(1)} <span style={{ fontSize: 12, color: C.dim }}>a-s</span>
-            </div>
-            <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>Taşlama toplam gerçekleşen</div>
-          </div>
-          <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 18px', boxShadow: C.cardShadow }}>
-            <GroupTag group="kaynakmontaj" />
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 700, color: C.groupB, marginTop: 6 }}>
-              {groupTotals.kaynakmontaj.actual.toFixed(1)} <span style={{ fontSize: 12, color: C.dim }}>a-s</span>
-            </div>
-            <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>Kaynak-Montaj toplam gerçekleşen</div>
-          </div>
-          <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 18px', boxShadow: C.cardShadow }}>
-            <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: C.bad, border: `1px solid ${C.dangerBadgeBorder}`, background: C.dangerBadgeBg, borderRadius: 4, padding: '2px 6px', textTransform: 'uppercase', fontWeight: 600 }}>Devamsızlık</span>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 700, color: C.bad, marginTop: 6 }}>
-              {absenteeismTotal.persons} <span style={{ fontSize: 12, color: C.dim }}>kişi-gün</span>
-            </div>
-            <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>{absenteeismTotal.hours.toFixed(1)} adam-saat kayıp</div>
-          </div>
-          <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 18px', boxShadow: C.cardShadow }}>
-            <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: C.copper, border: `1px solid ${C.warningBadgeBorder}`, background: C.warningBadgeBg, borderRadius: 4, padding: '2px 6px', textTransform: 'uppercase', fontWeight: 600 }}>Verim Kaybı</span>
-            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 700, color: C.copper, marginTop: 6 }}>
-              {lossTotal.toFixed(1)} <span style={{ fontSize: 12, color: C.dim }}>a-s</span>
-            </div>
-            <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>Standardı aşan süre</div>
-          </div>
-        </div>
-
-        {/* Ek Mesai Gereken Istasyonlar */}
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
-            Ek Mesai Gerekebilecek İstasyonlar
-          </div>
-          {overtimeStations.length === 0 ? (
-            <div style={{ background: C.successBadgeBg, border: `1px solid ${C.successBadgeBorder}`, borderRadius: 8, padding: 12, fontSize: 13, color: C.good, fontWeight: 500 }}>
-              ✓ Bu hafta ek mesai gereken istasyon görünmüyor.
-            </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {overtimeStations.map((s) => (
-                <div key={s.id} style={{ background: C.dangerBadgeBg, border: `1px solid ${C.dangerBadgeBorder}`, borderRadius: 8, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <GroupTag group={s.group} />
-                    <span style={{ fontWeight: 600, color: C.paper }}>{s.name}</span>
-                  </div>
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: C.bad, fontWeight: 600 }}>
-                    ≈{s.totalCapacityShortfall.toFixed(1)} a-s kapasite açığı{s.avgPresent > 0 ? ` · ≈${(s.totalCapacityShortfall / s.avgPresent).toFixed(1)} saat/kişi` : ''}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Haftalik Ozet Tablosu */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.5 }}>Haftalık Özet — İstasyon Bazlı</span>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={printReport} style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 6, color: C.paper, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontWeight: 600, boxShadow: C.cardShadow }}>Yazdır / PDF</button>
-            <button onClick={exportCSV} style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 6, color: C.paper, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontWeight: 600, boxShadow: C.cardShadow }}>CSV İndir</button>
-          </div>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 10 }}>
-          {stationSummaries.map((s, i) => (
-            <div key={s.id} style={{ background: C.summaryCardBg, border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px 14px', boxShadow: C.cardShadow, opacity: s.active === false ? 0.6 : 1 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: C.dim }}>{String(i + 1).padStart(2, '0')}</span>
-                  <span style={{ fontWeight: 600, fontSize: 13, color: C.paper }}>
-                    {s.name} {s.active === false && <span style={{ fontSize: 11, color: C.bad }}>(Pasif)</span>}
-                  </span>
-                </div>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 15, fontWeight: 700, color: effColor(s.avg, C) }}>
-                  {s.avg === null ? (s.idleDays > 0 ? 'Boşta' : '—') : `${Math.round(s.avg)}%`}
-                </span>
-              </div>
-              <div style={{ marginBottom: 6 }}><GroupTag group={s.group} /></div>
-              <DimensionBar eff={s.avg} />
-              <div style={{ fontSize: 11, color: C.dim, marginTop: 8 }}>
-                {s.days > 0 ? `${s.totalActual.toFixed(1)} a-s gerçekleşen${s.totalStandardExpected > 0 ? ` / ${s.totalStandardExpected.toFixed(1)} a-s hedef` : ''}` : (s.idleDays > 0 ? `${s.idleDays} gün planlı boşta` : 'Veri yok')}
-              </div>
-              {s.wagonsList && s.wagonsList.length > 0 && (
-                <div style={{ marginTop: 8, paddingTop: 6, borderTop: `1px solid ${C.border}`, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                  {s.wagonsList.map((w) => {
-                    const last = w.jobs[w.jobs.length - 1];
-                    const isDone = last.status === 'Tamamlandı';
-                    return (
-                      <span key={w.name} title={`${last.day} - ${last.job}: ${last.status}`} style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", padding: '2px 6px', borderRadius: 4, background: isDone ? C.successBadgeBg : C.warningBadgeBg, color: isDone ? C.good : C.copper, border: `1px solid ${isDone ? C.successBadgeBorder : C.warningBadgeBorder}`, fontWeight: 600 }}>
-                        🚆 #{w.name}: {isDone ? '✓' : '⏳'}
-                      </span>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
 
         <div style={{ marginTop: 28, fontSize: 11.5, color: C.dim, textAlign: 'center' }}>
           Epsilon Solentek İstasyon Verim Panosu · Firebase Cloud Veritabanı
