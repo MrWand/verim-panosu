@@ -31,7 +31,7 @@
   }
   .num-input:focus { outline: none; border-color: #00E5FF; box-shadow: 0 0 10px rgba(0,229,255,0.35); }
   .num-input::placeholder { color: #3F5A6D; }
-  .num-input-sm { padding: 6px 6px; font-size: 13px; }
+  .num-input-sm { padding: 5px 6px; font-size: 12px; }
   input[type=number]::-webkit-inner-spin-button,
   input[type=number]::-webkit-outer-spin-button { opacity: 0.5; }
   .idle-card {
@@ -201,16 +201,9 @@ function formatRange(monday) {
   return `${monday.getDate()} ${MONTHS[monday.getMonth()]} – ${sunday.getDate()} ${MONTHS[sunday.getMonth()]} ${sunday.getFullYear()}`;
 }
 
-function calcEff(entry, standard) {
-  if (!entry || entry.isIdle) return null;
-  const actual = parseFloat(entry.actual);
-  const target = parseFloat(entry.target);
-  const produced = parseFloat(entry.produced);
-  const vals = [];
-  if (standard != null && standard > 0 && actual > 0) vals.push(Math.min((standard / actual) * 100, 999));
-  if (target > 0 && !isNaN(produced)) vals.push(Math.min((produced / target) * 100, 999));
-  if (vals.length === 0) return null;
-  return vals.reduce((a, b) => a + b, 0) / vals.length;
+function calcEff(totalActual, totalStandard) {
+  if (totalActual == null || totalStandard == null || totalActual <= 0 || totalStandard <= 0) return null;
+  return Math.min((totalStandard / totalActual) * 100, 999);
 }
 
 function effColor(eff) {
@@ -221,7 +214,7 @@ function effColor(eff) {
 }
 
 function hasAnyInput(e) {
-  return !!(e && (e.isIdle || e.actual || e.totalStaff || e.absentStaff || e.target || e.produced || e.extraStandard));
+  return !!(e && (e.isIdle || e.actual || e.secondJobActual || e.totalStaff || e.absentStaff || e.target || e.produced));
 }
 
 function DimensionBar({ eff, height = 18 }) {
@@ -454,24 +447,60 @@ function App({ currentUser, onLogout }) {
     scheduleWrite('stations', id, { [field]: value });
   }
 
+  // 1. İş veya 2. İş saatleri değiştiğinde adam-saatleri otomatik hesapla
   function updateEntry(dKey, stationId, field, value) {
     const key = `${dKey}|${stationId}`;
     const current = data.entries[key] || {};
     const merged = { ...current, [field]: value };
     const patch = { [field]: value };
     
+    const totalStaff = parseFloat(merged.totalStaff) || 0;
+    const absentStaff = parseFloat(merged.absentStaff) || 0;
+    const present = Math.max(totalStaff - absentStaff, 0);
+
+    // 1. İş gerçekleşen a-s hesabı
     if (merged.actualEndTime && !merged.isIdle) {
       const startMin = timeToMin(merged.startTime) ?? SHIFT_START_MIN;
       const endMin = timeToMin(merged.actualEndTime);
-      const totalStaff = parseFloat(merged.totalStaff) || 0;
-      const absentStaff = parseFloat(merged.absentStaff) || 0;
-      const present = Math.max(totalStaff - absentStaff, 0);
       if (endMin != null && present > 0) {
         const workMin = workMinutesBetween(startMin, endMin, ALL_BLOCKS);
         patch.actual = Math.round(((workMin * present) / 60) * 100) / 100;
       }
+    } else if (field === 'actualEndTime' && !value) {
+      patch.actual = '';
+    }
+
+    // 2. İş (Yeni Başlatılan İş) gerçekleşen a-s hesabı
+    if (merged.hasSecondJob && merged.secondJobActualEndTime && !merged.isIdle) {
+      const startMin2 = timeToMin(merged.secondJobStartTime) ?? (timeToMin(merged.actualEndTime) || SHIFT_START_MIN);
+      const endMin2 = timeToMin(merged.secondJobActualEndTime);
+      if (endMin2 != null && present > 0) {
+        const workMin2 = workMinutesBetween(startMin2, endMin2, ALL_BLOCKS);
+        patch.secondJobActual = Math.round(((workMin2 * present) / 60) * 100) / 100;
+      }
+    } else if (field === 'secondJobActualEndTime' && !value) {
+      patch.secondJobActual = '';
     }
     
+    setData((prev) => {
+      const entries = { ...prev.entries };
+      entries[key] = { ...(entries[key] || {}), ...patch };
+      return { ...prev, entries };
+    });
+    scheduleWrite('entries', key, patch);
+  }
+
+  function toggleSecondJob(dKey, stationId, defaultStart, defaultStandard) {
+    const key = `${dKey}|${stationId}`;
+    const current = data.entries[key] || {};
+    const hasSecond = !current.hasSecondJob;
+    const patch = { 
+      hasSecondJob: hasSecond,
+      secondJobStartTime: hasSecond ? (current.actualEndTime || defaultStart || '12:50') : '',
+      secondJobStandard: hasSecond ? (current.secondJobStandard || defaultStandard || '') : '',
+      secondJobActualEndTime: hasSecond ? (current.secondJobActualEndTime || '') : '',
+      secondJobActual: hasSecond ? (current.secondJobActual || '') : ''
+    };
     setData((prev) => {
       const entries = { ...prev.entries };
       entries[key] = { ...(entries[key] || {}), ...patch };
@@ -489,6 +518,8 @@ function App({ currentUser, onLogout }) {
       patch.actual = '';
       patch.startTime = '';
       patch.actualEndTime = '';
+      patch.secondJobActual = '';
+      patch.secondJobActualEndTime = '';
     }
     setData((prev) => {
       const entries = { ...prev.entries };
@@ -503,8 +534,8 @@ function App({ currentUser, onLogout }) {
     return data.stations.some((s) => hasAnyInput(data.entries[`${k}|${s.id}`]));
   }
 
-  // Akıllı Devreden & Yeni İş Takibi:
-  // Dünden devreden iş varsa baz alınır, kullanıcı o gün yeni işler (+ ekstra saat) eklediğinde toplam standart doğru hesaplanır!
+  // Akıllı Çoklu İş (Devreden + Yeni İş) Takip Motoru:
+  // 1. İş dünden kalanı bitirir, 2. İş ise günün kalanında yeni başlayan işin adam-saatini ve yarına devrini hesaplar.
   const carryoverMap = useMemo(() => {
     const map = {};
     data.stations.forEach((s) => {
@@ -514,37 +545,54 @@ function App({ currentUser, onLogout }) {
         const isIdle = !!e?.isIdle;
         
         if (isIdle) {
-          // Boşta geçen günde devreden kaybolmaz, bir sonraki iş gününe aktarılır
-          return { baseCarry: carry, extraStandard: 0, effectiveStandard: null, actual: null, completionPercent: null, remainder: carry, isCarryover: carry != null, isIdle: true };
+          return { baseCarry: carry, job1Standard: null, job2Standard: null, totalStandard: null, job1Actual: null, job2Actual: null, totalActual: null, remainder: carry, isCarryover: carry != null, isIdle: true };
         }
 
-        const extra = parseFloat(e?.extraStandard) || 0;
-        let effectiveStandard = null;
         const isCarryover = carry != null;
-
-        if (carry != null) {
-          // Dünden kalan iş + bugün başlatılan yeni işlerin standart toplamı
-          effectiveStandard = carry + extra;
-        } else {
-          // Dünden kalan yoksa, istasyonun kendi standardı + varsa ek standart
-          if (s.standardHours != null || extra > 0) {
-            effectiveStandard = (s.standardHours || 0) + extra;
-          }
+        // 1. İşin Standardı: Dünden kalan varsa o, yoksa istasyonun temel standardı
+        const job1Standard = carry != null ? carry : s.standardHours;
+        const job1Actual = parseFloat(e?.actual) || 0;
+        
+        // 1. İşten kalan (varsa)
+        let job1Remainder = 0;
+        if (job1Standard != null) {
+          job1Remainder = Math.max(job1Standard - job1Actual, 0);
         }
 
-        if (!hasAnyInput(e)) {
-          return { baseCarry: carry, extraStandard: extra, effectiveStandard, actual: null, completionPercent: null, remainder: null, isCarryover, isIdle: false };
+        // 2. İş (Günün kalanında yeni başlatılan iş)
+        const hasJob2 = !!e?.hasSecondJob;
+        const job2Standard = hasJob2 ? (parseFloat(e?.secondJobStandard) || s.standardHours || 0) : 0;
+        const job2Actual = hasJob2 ? (parseFloat(e?.secondJobActual) || 0) : 0;
+        
+        let job2Remainder = 0;
+        if (hasJob2 && job2Standard > 0) {
+          job2Remainder = Math.max(job2Standard - job2Actual, 0);
         }
 
-        const act = parseFloat(e.actual) || 0;
-        if (effectiveStandard == null || effectiveStandard === 0) {
-          return { baseCarry: carry, extraStandard: extra, effectiveStandard: null, actual: act, completionPercent: null, remainder: null, isCarryover, isIdle: false };
-        }
+        // Yarına devredecek saat: 2. iş varsa onun kalanı, yoksa 1. işin kalanı
+        const nextCarry = hasJob2 ? (job2Remainder > 0.05 ? job2Remainder : null) : (job1Remainder > 0.05 ? job1Remainder : null);
+        carry = nextCarry;
 
-        const completionPercent = Math.min((act / effectiveStandard) * 100, 100);
-        const remainder = Math.max(effectiveStandard - act, 0);
-        carry = remainder > 0.05 ? remainder : null;
-        return { baseCarry: isCarryover ? (effectiveStandard - extra) : null, extraStandard: extra, effectiveStandard, actual: act, completionPercent, remainder, isCarryover, isIdle: false };
+        const totalStandard = (job1Standard || 0) + (hasJob2 ? job2Standard : 0);
+        const totalActual = job1Actual + job2Actual;
+
+        return {
+          baseCarry: isCarryover ? (job1Standard) : null,
+          job1Standard,
+          job1Actual,
+          job1Remainder,
+          job1Completed: job1Standard ? Math.min((job1Actual / job1Standard) * 100, 100) : null,
+          hasJob2,
+          job2Standard,
+          job2Actual,
+          job2Remainder,
+          job2Completed: job2Standard ? Math.min((job2Actual / job2Standard) * 100, 100) : null,
+          totalStandard: totalStandard > 0 ? totalStandard : null,
+          totalActual: totalActual > 0 ? totalActual : null,
+          remainder: carry,
+          isCarryover,
+          isIdle: false
+        };
       });
       map[s.id] = days;
     });
@@ -566,7 +614,7 @@ function App({ currentUser, onLogout }) {
       const absentStaff = parseFloat(entry.absentStaff) || 0;
       const present = Math.max(totalStaff - absentStaff, 0);
       const cInfo = carryoverMap[st.id]?.[dayIndex];
-      const effectiveStandard = cInfo ? cInfo.effectiveStandard : st.standardHours;
+      const effectiveStandard = cInfo ? cInfo.totalStandard : st.standardHours;
       const neededMin = stageRequiredMinutes(effectiveStandard, present, allowancePercent);
       let finishMin = null, mode = 'normal', overMinutes = 0, needsDecision = false;
       if (neededMin != null) { 
@@ -589,27 +637,28 @@ function App({ currentUser, onLogout }) {
           const e = data.entries[`${dateKey(d)}|${s.id}`];
           if (e?.isIdle) {
             idleDays += 1;
-            return; // Boşta olan günleri ortalamayı bozmaması için atla
+            return;
           }
 
           const cInfo = carryoverMap[s.id]?.[i];
-          const effectiveStandard = cInfo ? cInfo.effectiveStandard : s.standardHours;
-          const eff = calcEff(e, effectiveStandard);
+          const act = (parseFloat(e?.actual) || 0) + (e?.hasSecondJob ? (parseFloat(e?.secondJobActual) || 0) : 0);
+          const std = cInfo ? cInfo.totalStandard : s.standardHours;
+          const eff = calcEff(act, std);
+          
           if (eff !== null) { sum += eff; count += 1; }
           
           if (hasAnyInput(e) && !e?.isIdle) {
-            const act = parseFloat(e.actual) || 0;
             const tot = parseFloat(e.totalStaff) || 0;
             const abs = parseFloat(e.absentStaff) || 0;
             totalActual += act;
-            if (effectiveStandard != null) totalStandardExpected += effectiveStandard;
+            if (std != null) totalStandardExpected += std;
             totalAbsent += abs;
             totalLost += abs * shiftHours;
             if (tot > 0) {
               const present = Math.max(tot - abs, 0);
               presentSum += present; presentDays += 1;
-              if (effectiveStandard != null) {
-                const shortfall = effectiveStandard - present * shiftHours;
+              if (std != null) {
+                const shortfall = std - present * shiftHours;
                 if (shortfall > 0) totalCapacityShortfall += shortfall;
               }
             }
@@ -698,7 +747,7 @@ function App({ currentUser, onLogout }) {
   }
 
   function exportCSV() {
-    const header = ['Tarih', 'İstasyon', 'Grup', 'Durum', 'Başlangıç', 'Gerçek Bitiş', 'Hedef Standart (a-s)', 'Gerçekleşen (a-s)', 'Mevcut Personel', 'Devamsız', 'Kayıp (a-s)', 'Hedef (adet)', 'Üretilen (adet)', 'Verim (%)'];
+    const header = ['Tarih', 'İstasyon', 'Grup', 'Durum', '1. İş Başlangıç', '1. İş Bitiş', '1. İş Standart (a-s)', '1. İş Gerçekleşen (a-s)', '2. İş Başlangıç', '2. İş Bitiş', '2. İş Standart (a-s)', '2. İş Gerçekleşen (a-s)', 'Toplam Standart', 'Toplam Gerçekleşen', 'Personel', 'Devamsız', 'Verim (%)'];
     const lines = [header.join(';')];
     weekDates.forEach((d) => {
       const dKey = dateKey(d);
@@ -706,14 +755,32 @@ function App({ currentUser, onLogout }) {
         const e = data.entries[`${dKey}|${s.id}`];
         if (!hasAnyInput(e)) return;
         if (e.isIdle) {
-          lines.push([dKey, s.name, GROUP_LABEL[s.group], 'Planlı Boşta', '', '', '', '', '', '', '', '', '', ''].join(';'));
+          lines.push([dKey, s.name, GROUP_LABEL[s.group], 'Planlı Boşta', '', '', '', '', '', '', '', '', '', '', '', '', ''].join(';'));
           return;
         }
         const cDay = carryoverMap[s.id]?.find((_, idx) => weekDates[idx].getTime() === d.getTime());
-        const effectiveStandard = cDay ? cDay.effectiveStandard : s.standardHours;
-        const eff = calcEff(e, effectiveStandard);
-        const abs = parseFloat(e.absentStaff) || 0;
-        lines.push([dKey, s.name, GROUP_LABEL[s.group], 'Çalışıyor', e.startTime || '', e.actualEndTime || '', effectiveStandard ?? '', e.actual || '', e.totalStaff || '', e.absentStaff || '', (abs * shiftHours).toFixed(1), e.target || '', e.produced || '', eff === null ? '' : Math.round(eff)].join(';'));
+        const act = (parseFloat(e.actual) || 0) + (e.hasSecondJob ? (parseFloat(e.secondJobActual) || 0) : 0);
+        const std = cDay ? cDay.totalStandard : s.standardHours;
+        const eff = calcEff(act, std);
+        lines.push([
+          dKey, 
+          s.name, 
+          GROUP_LABEL[s.group], 
+          'Çalışıyor', 
+          e.startTime || '', 
+          e.actualEndTime || '', 
+          cDay ? cDay.job1Standard : '', 
+          e.actual || '', 
+          e.hasSecondJob ? e.secondJobStartTime : '', 
+          e.hasSecondJob ? e.secondJobActualEndTime : '', 
+          e.hasSecondJob ? e.secondJobStandard : '', 
+          e.hasSecondJob ? e.secondJobActual : '',
+          std ?? '',
+          act > 0 ? act.toFixed(1) : '',
+          e.totalStaff || '', 
+          e.absentStaff || '', 
+          eff === null ? '' : Math.round(eff)
+        ].join(';'));
       });
     });
     const csv = '\uFEFF' + lines.join('\n');
@@ -808,7 +875,7 @@ function App({ currentUser, onLogout }) {
                   <button 
                     onClick={() => toggleStationActive(s.id, s.active !== false)} 
                     style={{ background: s.active === false ? C.bad + '22' : C.good + '22', border: `1px solid ${s.active === false ? C.bad : C.good}`, color: s.active === false ? C.bad : C.good, cursor: 'pointer', padding: '3px 8px', fontSize: 11, borderRadius: 2 }}
-                    title={s.active === false ? 'İstasyonu Aktif Yap' : 'İstasyonu Pasife Al (Geçici olarak gizle)'}>
+                    title={s.active === false ? 'İstasyonu Aktif Yap' : 'İstasyonu Pasife Al'}>
                     {s.active === false ? 'Pasif' : 'Aktif'}
                   </button>
                   <button onClick={() => removeStation(s.id)} style={{ background: 'none', border: 'none', color: C.dim, cursor: 'pointer', padding: 2, fontSize: 16 }} title="Tamamen Sil">×</button>
@@ -844,27 +911,26 @@ function App({ currentUser, onLogout }) {
 
         {/* Secili gunun istasyon girisleri */}
         <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderTop: 'none', padding: 16, marginBottom: 24 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 12 }}>
             {data.stations.filter(s => s.active !== false).map((s) => {
               const entry = data.entries[`${selectedKey}|${s.id}`] || {};
               const isIdle = !!entry.isIdle;
               const cDay = carryoverMap[s.id]?.[dayIndex];
-              const effectiveStandard = cDay ? cDay.effectiveStandard : s.standardHours;
-              const eff = calcEff(entry, effectiveStandard);
+              
+              const totalActual = (parseFloat(entry.actual) || 0) + (entry.hasSecondJob ? (parseFloat(entry.secondJobActual) || 0) : 0);
+              const totalStandard = cDay ? cDay.totalStandard : s.standardHours;
+              const eff = calcEff(totalActual, totalStandard);
               const color = effColor(eff);
-              const actualNum = parseFloat(entry.actual) || 0;
-              const hasActual = entry.actual !== undefined && entry.actual !== '';
+              
               const totalStaff = parseFloat(entry.totalStaff) || 0;
               const absentStaff = parseFloat(entry.absentStaff) || 0;
               const presentStaff = Math.max(totalStaff - absentStaff, 0);
               const lostHours = absentStaff * shiftHours;
-              const lossHours = (effectiveStandard != null && hasActual) ? actualNum - effectiveStandard : null;
-              const lossPercent = (lossHours != null && effectiveStandard > 0) ? (lossHours / effectiveStandard) * 100 : null;
-              const capacity = totalStaff > 0 ? presentStaff * shiftHours : null;
-              const capacityShortfall = (effectiveStandard != null && capacity != null) ? effectiveStandard - capacity : null;
+              
+              const lossHours = (totalStandard != null && totalActual > 0) ? totalActual - totalStandard : null;
+              const lossPercent = (lossHours != null && totalStandard > 0) ? (lossHours / totalStandard) * 100 : null;
               const showStatus = hasAnyInput(entry) && !isIdle;
-              const completionPercent = cDay?.completionPercent ?? null;
-              const carryToNext = (cDay?.remainder != null && cDay.remainder > 0.05) ? cDay.remainder : null;
+              
               const isFinalStage = FINAL_STAGES.includes(s.name);
               const cascadeInfo = isFinalStage ? finalCascade.find((c) => c && c.station.id === s.id) : null;
               
@@ -872,7 +938,7 @@ function App({ currentUser, onLogout }) {
               if (!isFinalStage && !isIdle) {
                 const explicitStart = timeToMin(entry.startTime);
                 const startMinGeneric = explicitStart != null ? explicitStart : SHIFT_START_MIN;
-                const neededMinGeneric = stageRequiredMinutes(effectiveStandard, presentStaff, allowancePercent);
+                const neededMinGeneric = stageRequiredMinutes(totalStandard, presentStaff, allowancePercent);
                 if (neededMinGeneric != null) {
                   const est = estimateWithDecision(startMinGeneric, neededMinGeneric, entry.overtimeDecision);
                   displayInfo = { startMin: startMinGeneric, finishMin: est.finishMin, mode: est.mode, overMinutes: est.overMinutes || 0, needsDecision: est.needsDecision, autoStart: explicitStart == null };
@@ -884,11 +950,9 @@ function App({ currentUser, onLogout }) {
               return (
                 <div key={s.id} className={isIdle ? 'idle-card' : ''} style={{ background: C.panelAlt, border: `1px solid ${C.border}`, padding: 14, transition: 'all 0.3s ease' }}>
                   
-                  {/* Kart Ust Baslik & Durum Butonlari */}
+                  {/* Kart Basligi */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontWeight: 600, fontSize: 14, fontFamily: "'Rajdhani', sans-serif", letterSpacing: 0.3 }}>{s.name}</span>
-                    </div>
+                    <span style={{ fontWeight: 600, fontSize: 14, fontFamily: "'Rajdhani', sans-serif", letterSpacing: 0.3 }}>{s.name}</span>
                     
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <button
@@ -921,7 +985,6 @@ function App({ currentUser, onLogout }) {
                     </span>
                   </div>
 
-                  {/* Eger istasyon bugun bosta ise basit bildirim */}
                   {isIdle ? (
                     <div style={{ padding: '16px 10px', textAlign: 'center', background: C.page, border: `1px dashed ${C.border}`, borderRadius: 3, marginTop: 10 }}>
                       <div style={{ fontSize: 12, color: C.copper, fontWeight: 600, marginBottom: 4 }}>İstasyon Bugün Planlı Olarak Boşta</div>
@@ -929,73 +992,128 @@ function App({ currentUser, onLogout }) {
                     </div>
                   ) : (
                     <>
-                      {/* Devreden & Yeni Is Yonetim Blogu */}
-                      <div style={{ background: C.page, border: `1px solid ${C.border}`, borderRadius: 3, padding: '8px 10px', marginBottom: 10 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
+                      {/* Personel Girisi */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10, background: C.page, padding: 8, borderRadius: 3, border: `1px solid ${C.border}44` }}>
+                        <div>
+                          <div style={{ fontSize: 10, color: C.dim, marginBottom: 3, textAlign: 'center' }}>Mevcut personel</div>
+                          <input type="number" min="0" step="1" className="num-input num-input-sm" placeholder="0" value={entry.totalStaff || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'totalStaff', e.target.value)} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 10, color: C.dim, marginBottom: 3, textAlign: 'center' }}>Devamsız personel</div>
+                          <input type="number" min="0" step="1" className="num-input num-input-sm" placeholder="0" value={entry.absentStaff || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'absentStaff', e.target.value)} />
+                        </div>
+                        {absentStaff > 0 && (
+                          <div style={{ gridColumn: '1 / -1', fontSize: 10.5, color: C.bad, textAlign: 'center', fontFamily: "'JetBrains Mono', monospace" }}>
+                            Devamsızlık kaybı: {lostHours.toFixed(1)} a-s
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 1. İŞ (DÜNDEN DEVREDEN VEYA GÜNÜN İLK İŞİ) */}
+                      <div style={{ background: C.page, border: `1px solid ${C.border}`, borderRadius: 3, padding: '10px 10px', marginBottom: 10 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                          <span style={{ fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace", color: cDay?.isCarryover ? C.copper : C.line, fontWeight: 600 }}>
+                            {cDay?.isCarryover ? `↷ 1. İş: Dünden Kalan (${cDay.job1Standard.toFixed(1)} a-s)` : `1. İş: Standart (${s.standardHours != null ? `${s.standardHours} a-s` : '—'})`}
+                          </span>
+                          {cDay?.job1Completed != null && (
+                            <span style={{ fontSize: 10.5, fontFamily: "'JetBrains Mono', monospace", color: cDay.job1Completed >= 100 ? C.good : C.copper }}>
+                              %{Math.round(cDay.job1Completed)} bitti
+                            </span>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 4 }}>
                           <div>
-                            {cDay?.isCarryover ? (
-                              <span style={{ fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace", color: C.copper, fontWeight: 600 }}>
-                                ↷ Dünden Kalan: {cDay.baseCarry.toFixed(1)} a-s
-                              </span>
-                            ) : (
-                              <span style={{ fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace", color: C.dim }}>
-                                Gün Başlangıcı
-                              </span>
-                            )}
+                            <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>Başlama</div>
+                            <input type="time" className="num-input num-input-sm" value={entry.startTime || ''} placeholder="06:55" onChange={(e) => updateEntry(selectedKey, s.id, 'startTime', e.target.value)} />
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                            <span style={{ fontSize: 10.5, color: C.dim }}>+ Yeni İş (a-s):</span>
-                            <input
-                              type="number" min="0" step="0.5"
-                              placeholder="0"
-                              className="num-input num-input-sm"
-                              style={{ width: 55, padding: '2px 4px', fontSize: 11 }}
-                              value={entry.extraStandard || ''}
-                              onChange={(e) => updateEntry(selectedKey, s.id, 'extraStandard', e.target.value)}
-                              title="Devreden iş bittikten sonra alınan yeni işin standart adam-saati"
-                            />
+                          <div>
+                            <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>Gerçek Bitiş</div>
+                            <input type="time" className="num-input num-input-sm" value={entry.actualEndTime || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'actualEndTime', e.target.value)} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>Harcanan</div>
+                            <div style={{ background: 'rgba(3,8,14,0.9)', border: `1px solid ${C.border}`, borderRadius: 3, padding: '5px 4px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: C.paper, fontWeight: 700 }}>
+                              {entry.actual ? `${parseFloat(entry.actual).toFixed(1)} a-s` : '—'}
+                            </div>
                           </div>
                         </div>
 
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, paddingTop: 4, borderTop: `1px solid ${C.border}44` }}>
-                          <span style={{ fontSize: 11, color: C.line, fontFamily: "'JetBrains Mono', monospace" }}>
-                            Toplam Günlük Hedef:
+                        {cDay?.job1Remainder > 0.05 && (
+                          <div style={{ fontSize: 10.5, color: C.bad, fontFamily: "'JetBrains Mono', monospace", marginTop: 4 }}>
+                            ⚠ 1. İşten kalan: {cDay.job1Remainder.toFixed(1)} a-s
+                          </div>
+                        )}
+                      </div>
+
+                      {/* 2. İŞ (DEVREDEN BİTTİKTEN SONRA YENİ ALINAN İŞ) */}
+                      <div style={{ background: entry.hasSecondJob ? C.page : 'transparent', border: `1px dashed ${entry.hasSecondJob ? C.border : C.border + '66'}`, borderRadius: 3, padding: '8px 10px', marginBottom: 10 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: 11, color: entry.hasSecondJob ? C.good : C.dim, fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
+                            {entry.hasSecondJob ? '2. İş: Gün İçi Yeni İş' : 'Günün kalanında yeni iş alındı mı?'}
                           </span>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: C.paper, fontFamily: "'JetBrains Mono', monospace" }}>
-                            {effectiveStandard != null ? `${effectiveStandard.toFixed(1)} a-s` : '—'}
-                          </span>
+                          <button
+                            onClick={() => toggleSecondJob(selectedKey, s.id, entry.actualEndTime, s.standardHours)}
+                            style={{
+                              background: entry.hasSecondJob ? C.bad + '22' : C.good + '22',
+                              border: `1px solid ${entry.hasSecondJob ? C.bad : C.good}`,
+                              color: entry.hasSecondJob ? C.bad : C.good,
+                              fontSize: 10.5,
+                              padding: '2px 8px',
+                              cursor: 'pointer',
+                              borderRadius: 2,
+                              fontWeight: 600
+                            }}
+                          >
+                            {entry.hasSecondJob ? '× 2. İşi Kaldır' : '+ 2. Yeni İşi Başlat'}
+                          </button>
                         </div>
 
-                        {(completionPercent != null || carryToNext != null) && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
-                            {completionPercent != null && (
-                              <span style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: completionPercent >= 100 ? C.good : C.copper }}>
-                                Bugün tamamlanan: %{Math.round(completionPercent)}
-                              </span>
-                            )}
-                            {carryToNext != null && (
-                              <span style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: C.bad }}>
-                                ⚠ Yarına devreden: {carryToNext.toFixed(1)} a-s
-                              </span>
+                        {entry.hasSecondJob && (
+                          <div style={{ marginTop: 8 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                              <span style={{ fontSize: 10, color: C.dim }}>Yeni İş Standart:</span>
+                              <input
+                                type="number" min="0" step="0.5" placeholder="a-s"
+                                className="num-input num-input-sm" style={{ width: 65, padding: '2px 4px' }}
+                                value={entry.secondJobStandard || ''}
+                                onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobStandard', e.target.value)}
+                              />
+                              <span style={{ fontSize: 10, color: C.dim }}>a-s</span>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 4 }}>
+                              <div>
+                                <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>2. İş Başlama</div>
+                                <input type="time" className="num-input num-input-sm" value={entry.secondJobStartTime || ''} placeholder={entry.actualEndTime || '12:50'} onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobStartTime', e.target.value)} />
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>2. İş Bitiş</div>
+                                <input type="time" className="num-input num-input-sm" value={entry.secondJobActualEndTime || ''} placeholder="16:55" onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobActualEndTime', e.target.value)} />
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>2. İş Harcanan</div>
+                                <div style={{ background: 'rgba(3,8,14,0.9)', border: `1px solid ${C.border}`, borderRadius: 3, padding: '5px 4px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: C.good, fontWeight: 700 }}>
+                                  {entry.secondJobActual ? `${parseFloat(entry.secondJobActual).toFixed(1)} a-s` : '—'}
+                                </div>
+                              </div>
+                            </div>
+
+                            {cDay?.job2Remainder > 0.05 && (
+                              <div style={{ fontSize: 10.5, color: C.copper, fontFamily: "'JetBrains Mono', monospace", marginTop: 4 }}>
+                                ↷ 2. İşten yarına devredecek: {cDay.job2Remainder.toFixed(1)} a-s
+                              </div>
                             )}
                           </div>
                         )}
                       </div>
 
-                      {/* Saatler ve Tahminler */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-                        <div>
-                          <div style={{ fontSize: 10, color: C.dim, marginBottom: 4, textAlign: 'center' }}>Başlangıç saati {displayInfo?.autoStart ? '(otomatik)' : ''}</div>
-                          <input type="time" className="num-input" value={entry.startTime || ''} placeholder={minToTime(displayInfo?.startMin ?? SHIFT_START_MIN)} onChange={(e) => updateEntry(selectedKey, s.id, 'startTime', e.target.value)} />
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 10, color: C.dim, marginBottom: 4, textAlign: 'center' }}>
-                            {displayInfo?.mode === 'exceeds' ? 'Mesaide de bitmez' : displayInfo?.mode === 'overtime' ? 'Mesaide biter' : displayInfo?.mode === 'carryover' ? 'Yarına devrediyor' : displayInfo?.mode === 'pending' ? 'Karar bekleniyor' : 'Tahmini bitiş'}
-                          </div>
-                          <div style={{ background: C.page, border: `1px solid ${C.border}`, borderRadius: 3, padding: '8px 8px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 14, color: displayInfo?.mode === 'exceeds' ? C.bad : displayInfo?.mode === 'overtime' ? C.copper : displayInfo?.mode === 'carryover' ? C.bad : displayInfo?.mode === 'pending' ? C.copper : C.good, fontWeight: 700 }}>
-                            {displayInfo?.mode === 'carryover' ? '↷ ertesi gün' : displayInfo && displayInfo.finishMin != null ? minToTime(displayInfo.finishMin) : '—'}
-                          </div>
-                        </div>
+                      {/* Gunluk Toplam Ozet & Tahmin */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, padding: '4px 8px', background: 'rgba(0,229,255,0.05)', border: `1px solid ${C.border}33`, borderRadius: 3 }}>
+                        <span style={{ fontSize: 11, color: C.line, fontFamily: "'JetBrains Mono', monospace" }}>Günün Toplam Gerçekleşeni:</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: C.paper, fontFamily: "'JetBrains Mono', monospace" }}>
+                          {totalActual > 0 ? `${totalActual.toFixed(1)} a-s` : '—'}
+                        </span>
                       </div>
 
                       {displayInfo?.needsDecision && (
@@ -1018,55 +1136,18 @@ function App({ currentUser, onLogout }) {
                         </div>
                       )}
 
-                      {(displayInfo?.mode === 'overtime' || displayInfo?.mode === 'exceeds' || displayInfo?.mode === 'carryover') && !displayInfo?.needsDecision && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                          <span style={{ fontSize: 10, color: C.dim, fontFamily: "'JetBrains Mono', monospace" }}>Karar:</span>
-                          <button onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'yes')} style={{ fontSize: 10.5, fontWeight: 600, padding: '4px 10px', cursor: 'pointer', background: entry.overtimeDecision === 'yes' ? C.copper : 'transparent', border: `1px solid ${C.copper}`, color: entry.overtimeDecision === 'yes' ? '#2A1A08' : C.copper }}>Mesai Yapılacak</button>
-                          <button onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'no')} style={{ fontSize: 10.5, fontWeight: 600, padding: '4px 10px', cursor: 'pointer', background: entry.overtimeDecision === 'no' ? C.bad : 'transparent', border: `1px solid ${C.bad}`, color: entry.overtimeDecision === 'no' ? '#3D0D09' : C.bad }}>Mesai Yapılmayacak</button>
-                        </div>
-                      )}
-
-                      {/* Personel ve Gerceklesen */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-                        <div>
-                          <div style={{ fontSize: 10, color: C.dim, marginBottom: 4, textAlign: 'center' }}>Mevcut personel</div>
-                          <input type="number" min="0" step="1" className="num-input" placeholder="0" value={entry.totalStaff || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'totalStaff', e.target.value)} />
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 10, color: C.dim, marginBottom: 4, textAlign: 'center' }}>Devamsız personel</div>
-                          <input type="number" min="0" step="1" className="num-input" placeholder="0" value={entry.absentStaff || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'absentStaff', e.target.value)} />
-                        </div>
-                      </div>
-
-                      {absentStaff > 0 && (
-                        <div style={{ fontSize: 10.5, color: C.bad, marginBottom: 8, fontFamily: "'JetBrains Mono', monospace" }}>Devamsızlık kaybı: {lostHours.toFixed(1)} a-s</div>
-                      )}
-
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
-                        <div>
-                          <div style={{ fontSize: 10, color: C.dim, marginBottom: 4, textAlign: 'center' }}>Gerçek bitiş saati</div>
-                          <input type="time" className="num-input" value={entry.actualEndTime || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'actualEndTime', e.target.value)} />
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 10, color: C.dim, marginBottom: 4, textAlign: 'center' }}>Gerçekleşen adam-saat</div>
-                          <div style={{ background: C.page, border: `1px solid ${C.border}`, borderRadius: 3, padding: '8px 8px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 14, color: C.paper, fontWeight: 700 }}>
-                            {entry.actual !== undefined && entry.actual !== '' ? `${parseFloat(entry.actual).toFixed(1)} a-s` : '—'}
-                          </div>
-                        </div>
-                      </div>
-
                       <DimensionBar eff={eff} />
 
                       {showStatus && (
                         <div style={{ marginTop: 8, fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace", display: 'flex', flexDirection: 'column', gap: 3 }}>
-                          {effectiveStandard == null ? (
-                            <span style={{ color: C.dim }}>Standart girilmedi — verim ve kayıp hesaplanamıyor</span>
+                          {totalStandard == null ? (
+                            <span style={{ color: C.dim }}>Standart girilmedi — verim hesaplanamıyor</span>
                           ) : lossHours == null ? (
                             <span style={{ color: C.dim }}>Gerçekleşen adam-saat girilmedi</span>
                           ) : lossHours > 0.05 ? (
-                            <span style={{ color: C.bad }}>Kayıp: {lossHours.toFixed(1)} a-s (standardın üzerinde harcandı)</span>
+                            <span style={{ color: C.bad }}>Kayıp: {lossHours.toFixed(1)} a-s (standardın üzerinde)</span>
                           ) : lossHours < -0.05 ? (
-                            <span style={{ color: C.good }}>Tasarruf: {(-lossHours).toFixed(1)} a-s (standardın altında tamamlandı)</span>
+                            <span style={{ color: C.good }}>Tasarruf: {(-lossHours).toFixed(1)} a-s (standardın altında)</span>
                           ) : (
                             <span style={{ color: C.good }}>Tam zamanında tamamlandı</span>
                           )}
@@ -1129,12 +1210,6 @@ function App({ currentUser, onLogout }) {
                     </span>
                   );
                 })()}
-                {finalCascade.some((c) => c && c.mode === 'overtime') && !finalCascade.some((c) => c && c.mode === 'exceeds') && (
-                  <span style={{ fontSize: 12, color: C.copper, fontFamily: "'JetBrains Mono', monospace" }}>⚠ Normal mesaide bitmiyor — ek mesai gerekiyor</span>
-                )}
-                {finalCascade.some((c) => c && c.mode === 'exceeds') && (
-                  <span style={{ fontSize: 12, color: C.bad, fontFamily: "'JetBrains Mono', monospace" }}>⚠ Ek mesai de yetmiyor — iş bugün bitmeyebilir</span>
-                )}
               </div>
             </div>
           </div>
@@ -1148,7 +1223,7 @@ function App({ currentUser, onLogout }) {
               {groupTotals.taslama.actual.toFixed(1)} <span style={{ fontSize: 13, color: C.dim, fontWeight: 500 }}>a-s</span>
             </div>
             <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>
-              {groupTotals.taslama.standard > 0 ? `Standart: ${groupTotals.taslama.standard.toFixed(1)} a-s (İlk Temizlik + Sıfırlama + Final Temizlik)` : 'Taşlama istasyonları toplamı'}
+              {groupTotals.taslama.standard > 0 ? `Standart: ${groupTotals.taslama.standard.toFixed(1)} a-s` : 'Taşlama istasyonları toplamı'}
             </div>
           </div>
           <div style={{ background: C.panel, border: `1px solid ${C.groupB}55`, boxShadow: `0 0 20px ${C.groupB}22`, padding: '14px 16px' }}>
