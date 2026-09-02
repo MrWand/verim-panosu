@@ -253,7 +253,7 @@ function effColor(eff) {
 }
 
 function hasAnyInput(e) {
-  return !!(e && (e.isIdle || e.actual || e.secondJobActual || e.totalStaff || e.absentStaff || e.target || e.produced || e.startTime || e.actualEndTime));
+  return !!(e && (e.isIdle || e.wagonNo || e.secondJobWagonNo || e.actual || e.secondJobActual || e.totalStaff || e.absentStaff || e.target || e.produced || e.startTime || e.actualEndTime));
 }
 
 function DimensionBar({ eff, height = 12 }) {
@@ -532,6 +532,7 @@ function App({ currentUser, onLogout }) {
     const hasSecond = !current.hasSecondJob;
     const patch = { 
       hasSecondJob: hasSecond,
+      secondJobWagonNo: hasSecond ? (current.secondJobWagonNo || current.wagonNo || '') : '',
       secondJobStartTime: hasSecond ? (current.actualEndTime || defaultStart || '12:50') : '',
       secondJobStandard: hasSecond ? (current.secondJobStandard || defaultStandard || '') : '',
       secondJobActualEndTime: hasSecond ? (current.secondJobActualEndTime || '') : '',
@@ -603,6 +604,7 @@ function App({ currentUser, onLogout }) {
     const map = {};
     data.stations.forEach((s) => {
       let carry = null;
+      let carryWagon = null;
       const days = weekDates.map((d) => {
         const e = data.entries[`${dateKey(d)}|${s.id}`];
         const hasInput = hasAnyInput(e);
@@ -611,11 +613,14 @@ function App({ currentUser, onLogout }) {
         if (!hasInput || isIdle) {
           const result = {
             baseCarry: carry,
+            carryWagon,
+            job1WagonNo: carryWagon || '',
             job1Standard: carry != null ? carry : s.standardHours,
             job1Actual: 0,
             job1Remainder: carry != null ? carry : 0,
             job1Completed: null,
             hasJob2: false,
+            job2WagonNo: '',
             job2Standard: 0,
             job2Actual: 0,
             job2Remainder: 0,
@@ -628,11 +633,13 @@ function App({ currentUser, onLogout }) {
           };
           if (!hasInput) {
             carry = null;
+            carryWagon = null;
           }
           return result;
         }
 
         const isCarryover = carry != null;
+        const job1WagonNo = (e?.wagonNo || carryWagon || '').trim();
         const job1Standard = carry != null ? carry : s.standardHours;
         const job1Actual = parseFloat(e?.actual) || 0;
         
@@ -647,6 +654,7 @@ function App({ currentUser, onLogout }) {
         }
 
         const hasJob2 = !!e?.hasSecondJob;
+        const job2WagonNo = hasJob2 ? (e?.secondJobWagonNo || job1WagonNo || '').trim() : '';
         const job2Standard = hasJob2 ? (parseFloat(e?.secondJobStandard) || s.standardHours || 0) : 0;
         const job2Actual = hasJob2 ? (parseFloat(e?.secondJobActual) || 0) : 0;
         const isJob2InProgress = e?.secondJobStatus === 'in_progress';
@@ -662,8 +670,10 @@ function App({ currentUser, onLogout }) {
 
         if (hasJob2) {
           carry = (isJob2InProgress && job2Remainder > 0.05) ? job2Remainder : null;
+          carryWagon = carry ? (e?.secondJobWagonNo || job1WagonNo || '') : null;
         } else {
           carry = (isJob1InProgress && job1Remainder > 0.05) ? job1Remainder : null;
+          carryWagon = carry ? job1WagonNo : null;
         }
 
         const totalStandard = (job1Standard || 0) + (hasJob2 ? job2Standard : 0);
@@ -671,12 +681,15 @@ function App({ currentUser, onLogout }) {
 
         return {
           baseCarry: isCarryover ? job1Standard : null,
+          carryWagon,
+          job1WagonNo,
           job1Standard,
           job1Actual,
           job1Remainder,
           job1Status: isJob1InProgress ? 'in_progress' : 'completed',
           job1Completed: (job1Standard && job1Actual > 0) ? (isJob1InProgress ? Math.min((job1Actual / job1Standard) * 100, 100) : 100) : null,
           hasJob2,
+          job2WagonNo,
           job2Standard,
           job2Actual,
           job2Remainder,
@@ -716,7 +729,8 @@ function App({ currentUser, onLogout }) {
         const r = estimateWithDecision(startMin, neededMin, entry.overtimeDecision, dayIndex); 
         finishMin = r.finishMin; mode = r.mode; overMinutes = r.overMinutes || 0; needsDecision = r.needsDecision; label = r.label;
       }
-      results.push({ station: st, startMin, neededMin, finishMin, mode, overMinutes, needsDecision, label, present, autoStart: explicitStart == null, effectiveStandard, isCarryover: cInfo?.isCarryover });
+      const wagonNo = (entry.wagonNo || cInfo?.job1WagonNo || '').trim();
+      results.push({ station: st, wagonNo, startMin, neededMin, finishMin, mode, overMinutes, needsDecision, label, present, autoStart: explicitStart == null, effectiveStandard, isCarryover: cInfo?.isCarryover });
       cursor = finishMin != null ? finishMin : startMin;
     });
     return results;
@@ -727,6 +741,7 @@ function App({ currentUser, onLogout }) {
       .filter((s) => showInactiveStations || s.active !== false)
       .map((s) => {
         let sum = 0, count = 0, totalActual = 0, totalStandardExpected = 0, totalAbsent = 0, totalLost = 0, presentSum = 0, presentDays = 0, totalCapacityShortfall = 0, idleDays = 0;
+        const wagonStatusMap = {};
         
         weekDates.forEach((d, i) => {
           const e = data.entries[`${dateKey(d)}|${s.id}`];
@@ -760,13 +775,40 @@ function App({ currentUser, onLogout }) {
                 if (shortfall > 0.05) totalCapacityShortfall += shortfall;
               }
             }
+
+            const dayName = DAY_NAMES[i];
+            const w1 = (e.wagonNo || cInfo?.job1WagonNo || '').trim();
+            if (w1) {
+              if (!wagonStatusMap[w1]) wagonStatusMap[w1] = { name: w1, jobs: [] };
+              wagonStatusMap[w1].jobs.push({
+                day: dayName,
+                job: '1. İş',
+                status: e.job1Status === 'in_progress' ? 'Devam Ediyor' : (e.actualEndTime ? 'Tamamlandı' : 'Başlandı'),
+                actual: parseFloat(e.actual) || 0,
+                remainder: cInfo?.job1Remainder || 0
+              });
+            }
+            if (e.hasSecondJob) {
+              const w2 = (e.secondJobWagonNo || w1).trim();
+              if (w2) {
+                if (!wagonStatusMap[w2]) wagonStatusMap[w2] = { name: w2, jobs: [] };
+                wagonStatusMap[w2].jobs.push({
+                  day: dayName,
+                  job: '2. İş',
+                  status: e.secondJobStatus === 'in_progress' ? 'Devam Ediyor' : (e.secondJobActualEndTime ? 'Tamamlandı' : 'Başlandı'),
+                  actual: parseFloat(e.secondJobActual) || 0,
+                  remainder: cInfo?.job2Remainder || 0
+                });
+              }
+            }
           }
         });
 
         const lossTotal = totalStandardExpected > 0 ? totalActual - totalStandardExpected : null;
         const lossPercentAvg = (lossTotal != null && totalStandardExpected > 0) ? (lossTotal / totalStandardExpected) * 100 : null;
         const avgPresent = presentDays > 0 ? presentSum / presentDays : 0;
-        return { ...s, avg: count > 0 ? sum / count : null, totalActual, totalStandardExpected, lossTotal, lossPercentAvg, totalCapacityShortfall, totalAbsent, totalLost, avgPresent, days: count, idleDays, dayDetails: carryoverMap[s.id] || [] };
+        const wagonsList = Object.values(wagonStatusMap);
+        return { ...s, avg: count > 0 ? sum / count : null, totalActual, totalStandardExpected, lossTotal, lossPercentAvg, totalCapacityShortfall, totalAbsent, totalLost, avgPresent, days: count, idleDays, wagonsList, dayDetails: carryoverMap[s.id] || [] };
       }).sort((a, b) => { if (a.avg === null) return 1; if (b.avg === null) return -1; return b.avg - a.avg; });
   }, [data, weekDates, shiftHours, carryoverMap, showInactiveStations]);
 
@@ -791,28 +833,48 @@ function App({ currentUser, onLogout }) {
 
   function printReport() {
     const rangeLabel = formatRange(weekStart);
-    const rows = stationSummaries.filter(s => s.active !== false).map((s) => `
+    const rows = stationSummaries.filter(s => s.active !== false).map((s) => {
+      let wagonSummaryHtml = '—';
+      if (s.wagonsList && s.wagonsList.length > 0) {
+        wagonSummaryHtml = s.wagonsList.map(w => {
+          const lastJob = w.jobs[w.jobs.length - 1];
+          const isDone = lastJob.status === 'Tamamlandı';
+          const badgeColor = isDone ? '#059669' : '#d97706';
+          const badgeIcon = isDone ? '✓' : '⏳';
+          return `<div style="margin-bottom:2px">
+            <span style="font-weight:700;color:#0284c7">#${w.name}</span>: 
+            <span style="color:${badgeColor};font-weight:600;font-size:11px">${badgeIcon} ${lastJob.status}</span> 
+            <span style="color:#64748B;font-size:10px">(${lastJob.day} - ${lastJob.job})</span>
+          </div>`;
+        }).join('');
+      }
+      return `
       <tr>
-        <td>${s.name} <span style="color:#64748B;font-size:11px">(${GROUP_LABEL[s.group]})</span></td>
+        <td>
+          <div style="font-weight:600">${s.name}</div>
+          <span style="color:#64748B;font-size:11px">(${GROUP_LABEL[s.group]})</span>
+        </td>
+        <td style="min-width:140px">${wagonSummaryHtml}</td>
         <td style="text-align:right">${s.totalStandardExpected > 0 ? s.totalStandardExpected.toFixed(1) : (s.standardHours != null ? s.standardHours.toFixed(1) : '—')}</td>
         <td style="text-align:right">${s.totalActual.toFixed(1)}</td>
         <td style="text-align:right;font-weight:600;color:${s.lossTotal != null && s.lossTotal > 0.05 ? '#e11d48' : '#059669'}">${s.lossTotal == null ? '—' : (s.lossTotal > 0.05 ? '+' + s.lossTotal.toFixed(1) + ' (kayıp)' : (s.lossTotal < -0.05 ? (-s.lossTotal).toFixed(1) + ' (tasarruf)' : '0.0'))}</td>
         <td style="text-align:right">${s.totalAbsent > 0 ? s.totalAbsent + ' kişi / ' + s.totalLost.toFixed(1) + ' a-s' : '—'}</td>
         <td style="text-align:right;font-weight:700">${s.avg === null ? (s.idleDays > 0 ? '<span style="color:#64748B">Planlı Boşta</span>' : '—') : Math.round(s.avg) + '%'}</td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
     const overtimeRows = overtimeStations.map((s) => `<li>${s.name}: ≈${s.totalCapacityShortfall.toFixed(1)} adam-saat kapasite açığı${s.avgPresent > 0 ? ` · ≈${(s.totalCapacityShortfall / s.avgPresent).toFixed(1)} saat/kişi ek mesai` : ''}</li>`).join('');
     const allowanceBreaches = stationSummaries.filter((s) => s.lossPercentAvg != null && s.lossPercentAvg > allowancePercent);
     const allowanceRows = allowanceBreaches.map((s) => `<li>${s.name}: kayıp oranı %${s.lossPercentAvg.toFixed(0)} (izin verilen %${allowancePercent})</li>`).join('');
     
     const html = `<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8" />
-      <title>Haftalık Verim Raporu - ${rangeLabel}</title>
+      <title>Haftalık Verim ve Vagon Takip Raporu - ${rangeLabel}</title>
       <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #1E293B; padding: 32px; }
         h1 { font-size: 18px; margin: 0 0 4px; font-weight: 700; }
         h2 { font-size: 13px; font-weight: normal; color: #64748B; margin: 0 0 20px; }
         h3 { font-size: 14px; margin: 20px 0 8px; font-weight: 600; }
         table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; }
-        th, td { border: 1px solid #CBD5E1; padding: 8px 10px; }
+        th, td { border: 1px solid #CBD5E1; padding: 8px 10px; vertical-align: top; }
         th { background: #F8FAFC; text-align: left; font-weight: 600; color: #334155; }
         .grid2 { display: flex; gap: 16px; margin-top: 16px; }
         .box { border: 1px solid #E2E8F0; background: #F8FAFC; border-radius: 6px; padding: 12px 16px; flex: 1; }
@@ -820,11 +882,11 @@ function App({ currentUser, onLogout }) {
         ul { font-size: 13px; padding-left: 18px; color: #334155; }
         @media print { body { padding: 12px; } }
       </style></head><body>
-      <h1>Epsilon Solentek Raylı Sistemler A.Ş. — Haftalık İstasyon Verim Raporu</h1>
+      <h1>Epsilon Solentek Raylı Sistemler A.Ş. — Haftalık İstasyon Verim ve Vagon Takip Raporu</h1>
       <h2>${rangeLabel} · Net mesai: ${shiftHours.toFixed(2)} saat/kişi · Mola payı: %${allowancePercent}</h2>
       <table>
-        <thead><tr><th>İstasyon</th><th style="text-align:right">Hedef Standart (a-s)</th><th style="text-align:right">Gerçekleşen (a-s)</th><th style="text-align:right">Kayıp/Tasarruf (a-s)</th><th style="text-align:right">Devamsızlık</th><th style="text-align:right">Verim</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="6">Bu hafta için veri girilmemiş.</td></tr>'}</tbody>
+        <thead><tr><th>İstasyon</th><th>Vagon No & İş Durumu</th><th style="text-align:right">Hedef Standart (a-s)</th><th style="text-align:right">Gerçekleşen (a-s)</th><th style="text-align:right">Kayıp/Tasarruf (a-s)</th><th style="text-align:right">Devamsızlık</th><th style="text-align:right">Verim</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="7">Bu hafta için veri girilmemiş.</td></tr>'}</tbody>
       </table>
       <div class="grid2">
         <div class="box">Taşlama toplamı<b>${groupTotals.taslama.actual.toFixed(1)} a-s</b></div>
@@ -845,7 +907,7 @@ function App({ currentUser, onLogout }) {
   }
 
   function exportCSV() {
-    const header = ['Tarih', 'İstasyon', 'Grup', 'Durum', '1. İş Başlangıç', '1. İş Bitiş', '1. İş Standart (a-s)', '1. İş Gerçekleşen (a-s)', '2. İş Başlangıç', '2. İş Bitiş', '2. İş Standart (a-s)', '2. İş Gerçekleşen (a-s)', 'Toplam Standart', 'Toplam Gerçekleşen', 'Personel', 'Devamsız', 'Verim (%)'];
+    const header = ['Tarih', 'İstasyon', 'Grup', 'Durum', '1. İş Vagon No', '1. İş Durumu', '1. İş Başlangıç', '1. İş Bitiş', '1. İş Standart (a-s)', '1. İş Gerçekleşen (a-s)', '2. İş Vagon No', '2. İş Durumu', '2. İş Başlangıç', '2. İş Bitiş', '2. İş Standart (a-s)', '2. İş Gerçekleşen (a-s)', 'Toplam Standart', 'Toplam Gerçekleşen', 'Personel', 'Devamsız', 'Verim (%)'];
     const lines = [header.join(';')];
     weekDates.forEach((d) => {
       const dKey = dateKey(d);
@@ -853,22 +915,32 @@ function App({ currentUser, onLogout }) {
         const e = data.entries[`${dKey}|${s.id}`];
         if (!hasAnyInput(e)) return;
         if (e.isIdle) {
-          lines.push([dKey, s.name, GROUP_LABEL[s.group], 'Planlı Boşta', '', '', '', '', '', '', '', '', '', '', '', '', ''].join(';'));
+          lines.push([dKey, s.name, GROUP_LABEL[s.group], 'Planlı Boşta', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''].join(';'));
           return;
         }
         const cDay = carryoverMap[s.id]?.find((_, idx) => weekDates[idx].getTime() === d.getTime());
         const act = (parseFloat(e.actual) || 0) + (e.hasSecondJob ? (parseFloat(e.secondJobActual) || 0) : 0);
         const std = cDay ? cDay.totalStandard : s.standardHours;
         const eff = calcEff(act, std);
+
+        const w1 = (e.wagonNo || cDay?.job1WagonNo || '').trim();
+        const j1Status = e.job1Status === 'in_progress' ? 'Devam Ediyor' : (e.actualEndTime ? 'Tamamlandı' : 'Başlandı');
+        const w2 = e.hasSecondJob ? ((e.secondJobWagonNo || w1).trim()) : '';
+        const j2Status = e.hasSecondJob ? (e.secondJobStatus === 'in_progress' ? 'Devam Ediyor' : (e.secondJobActualEndTime ? 'Tamamlandı' : 'Başlandı')) : '';
+
         lines.push([
           dKey, 
           s.name, 
           GROUP_LABEL[s.group], 
           'Çalışıyor', 
+          w1,
+          j1Status,
           e.startTime || '', 
           e.actualEndTime || '', 
           cDay ? cDay.job1Standard : '', 
           e.actual || '', 
+          w2,
+          j2Status,
           e.hasSecondJob ? e.secondJobStartTime : '', 
           e.hasSecondJob ? e.secondJobActualEndTime : '', 
           e.hasSecondJob ? e.secondJobStandard : '', 
@@ -885,7 +957,7 @@ function App({ currentUser, onLogout }) {
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `istasyon-verim-${dateKey(weekStart)}.csv`; a.click();
+    a.href = url; a.download = `istasyon-verim-vagon-${dateKey(weekStart)}.csv`; a.click();
     URL.revokeObjectURL(url);
   }
 
@@ -1216,6 +1288,35 @@ function App({ currentUser, onLogout }) {
                     </div>
                   ) : (
                     <>
+                      {/* Vagon Numarası & Durumu */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, background: '#0B0F17', padding: '6px 10px', borderRadius: 4, border: `1px solid ${C.border}` }}>
+                        <span style={{ fontSize: 11, color: C.line, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
+                          <span>🚆</span> Vagon No:
+                        </span>
+                        <input 
+                          type="text"
+                          placeholder={cDay?.isCarryover && cDay?.job1WagonNo ? `Dünden: ${cDay.job1WagonNo}` : "örn. V-101 / Şasi 12"}
+                          value={entry.wagonNo ?? (cDay?.isCarryover && cDay?.job1WagonNo ? cDay.job1WagonNo : '')}
+                          onChange={(e) => updateEntry(selectedKey, s.id, 'wagonNo', e.target.value)}
+                          style={{
+                            flex: 1,
+                            background: '#0E1520',
+                            border: '1px solid #233142',
+                            borderRadius: 4,
+                            color: '#38BDF8',
+                            fontWeight: 600,
+                            padding: '5px 8px',
+                            fontSize: 12,
+                            fontFamily: "'JetBrains Mono', monospace"
+                          }}
+                        />
+                        {(entry.wagonNo || cDay?.job1WagonNo) && (
+                          <span style={{ fontSize: 10.5, padding: '2px 6px', borderRadius: 3, background: entry.job1Status === 'in_progress' ? `${C.copper}22` : (isJob1Completed ? `${C.good}22` : `${C.line}22`), color: entry.job1Status === 'in_progress' ? C.copper : (isJob1Completed ? C.good : C.line), border: `1px solid ${entry.job1Status === 'in_progress' ? C.copper : (isJob1Completed ? C.good : C.line)}44`, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                            {entry.job1Status === 'in_progress' ? '⏳ Devam' : (isJob1Completed ? '✓ Bitti' : 'İşlemde')}
+                          </span>
+                        )}
+                      </div>
+
                       {/* Personel Girisi */}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10, background: C.page, padding: 8, borderRadius: 4, border: `1px solid ${C.border}` }}>
                         <div>
@@ -1366,6 +1467,32 @@ function App({ currentUser, onLogout }) {
                               onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobStandard', e.target.value)}
                             />
                             <span style={{ fontSize: 11, color: C.dim }}>adam-saat</span>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, background: '#0B0F17', padding: '5px 8px', borderRadius: 4, border: '1px solid #233142' }}>
+                            <span style={{ fontSize: 11, color: C.copper, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", whiteSpace: 'nowrap' }}>🚆 2. İş Vagon No:</span>
+                            <input 
+                              type="text"
+                              placeholder={entry.wagonNo || "örn. V-102"}
+                              value={entry.secondJobWagonNo || ''}
+                              onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobWagonNo', e.target.value)}
+                              style={{
+                                flex: 1,
+                                background: '#0E1520',
+                                border: '1px solid #233142',
+                                borderRadius: 4,
+                                color: '#F59E0B',
+                                fontWeight: 600,
+                                padding: '4px 6px',
+                                fontSize: 11,
+                                fontFamily: "'JetBrains Mono', monospace"
+                              }}
+                            />
+                            {entry.secondJobWagonNo && (
+                              <span style={{ fontSize: 10, padding: '2px 5px', borderRadius: 3, background: entry.secondJobStatus === 'in_progress' ? `${C.copper}22` : (isJob2Completed ? `${C.good}22` : `${C.line}22`), color: entry.secondJobStatus === 'in_progress' ? C.copper : (isJob2Completed ? C.good : C.line), border: `1px solid ${entry.secondJobStatus === 'in_progress' ? C.copper : (isJob2Completed ? C.good : C.line)}44`, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                {entry.secondJobStatus === 'in_progress' ? '⏳ Devam' : (isJob2Completed ? '✓ Bitti' : 'İşlemde')}
+                              </span>
+                            )}
                           </div>
 
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, marginBottom: 4 }}>
@@ -1537,7 +1664,14 @@ function App({ currentUser, onLogout }) {
                 {finalCascade.map((c, i) => (
                   <React.Fragment key={i}>
                     <div style={{ minWidth: 120, flex: 1 }}>
-                      <div style={{ fontSize: 11, color: C.dim, marginBottom: 2 }}>{c ? c.station.name.replace('Final Temizlik - ', '') : FINAL_STAGES[i].replace('Final Temizlik - ', '')}</div>
+                      <div style={{ fontSize: 11, color: C.dim, marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                        <span>{c ? c.station.name.replace('Final Temizlik - ', '') : FINAL_STAGES[i].replace('Final Temizlik - ', '')}</span>
+                        {c?.wagonNo && (
+                          <span style={{ color: C.line, background: 'rgba(56, 189, 248, 0.12)', border: `1px solid ${C.line}33`, padding: '1px 4px', borderRadius: 3, fontWeight: 700, fontSize: 10 }}>
+                            #{c.wagonNo}
+                          </span>
+                        )}
+                      </div>
                       <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13.5, color: C.paper }}>
                         {c ? minToTime(c.startMin) : '—'} → <span style={{ color: c?.mode === 'exceeds' || c?.mode === 'carryover' ? C.bad : c?.mode?.includes('weekend') ? C.weekend : c?.mode === 'overtime' || c?.mode === 'pending' || c?.mode === 'pending_friday' ? C.copper : C.good, fontWeight: 700 }}>{c ? c.label : '—'}</span>
                       </div>
@@ -1546,16 +1680,27 @@ function App({ currentUser, onLogout }) {
                   </React.Fragment>
                 ))}
               </div>
-              <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 10, display: 'flex', alignItems: 'baseline', gap: 10 }}>
-                <span style={{ fontSize: 11, color: C.dim, textTransform: 'uppercase' }}>Tahmini Teslim Saati:</span>
+              <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 11, color: C.dim, textTransform: 'uppercase' }}>Tahmini Teslim Saati:</span>
+                  {(() => {
+                    const last = [...finalCascade].reverse().find((c) => c && c.finishMin != null);
+                    const lastColor = last?.mode === 'exceeds' ? C.bad : last?.mode?.includes('weekend') ? C.weekend : last?.mode === 'overtime' ? C.copper : C.good;
+                    return (
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, fontWeight: 700, color: lastColor }}>
+                        {last ? last.label : '—'}
+                      </span>
+                    );
+                  })()}
+                </div>
                 {(() => {
-                  const last = [...finalCascade].reverse().find((c) => c && c.finishMin != null);
-                  const lastColor = last?.mode === 'exceeds' ? C.bad : last?.mode?.includes('weekend') ? C.weekend : last?.mode === 'overtime' ? C.copper : C.good;
-                  return (
-                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, fontWeight: 700, color: lastColor }}>
-                      {last ? last.label : '—'}
-                    </span>
-                  );
+                  const activeWagon = finalCascade.find(c => c?.wagonNo)?.wagonNo;
+                  return activeWagon ? (
+                    <div style={{ background: 'rgba(56, 189, 248, 0.12)', border: `1px solid ${C.line}44`, color: C.line, padding: '4px 10px', borderRadius: 4, fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>🚆 Teslimattaki Vagon:</span>
+                      <span style={{ color: '#fff' }}>#{activeWagon}</span>
+                    </div>
+                  ) : null;
                 })()}
               </div>
             </div>
@@ -1647,6 +1792,19 @@ function App({ currentUser, onLogout }) {
               <div style={{ fontSize: 11, color: C.dim, marginTop: 8 }}>
                 {s.days > 0 ? `${s.totalActual.toFixed(1)} a-s gerçekleşen${s.totalStandardExpected > 0 ? ` / ${s.totalStandardExpected.toFixed(1)} a-s hedef` : ''}` : (s.idleDays > 0 ? `${s.idleDays} gün planlı boşta` : 'Veri yok')}
               </div>
+              {s.wagonsList && s.wagonsList.length > 0 && (
+                <div style={{ marginTop: 8, paddingTop: 6, borderTop: `1px solid ${C.border}`, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  {s.wagonsList.map((w) => {
+                    const last = w.jobs[w.jobs.length - 1];
+                    const isDone = last.status === 'Tamamlandı';
+                    return (
+                      <span key={w.name} title={`${last.day} - ${last.job}: ${last.status}`} style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", padding: '2px 5px', borderRadius: 3, background: isDone ? `${C.good}15` : `${C.copper}15`, color: isDone ? C.good : C.copper, border: `1px solid ${isDone ? C.good : C.copper}33`, fontWeight: 600 }}>
+                        🚆 #{w.name}: {isDone ? '✓' : '⏳'}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           ))}
         </div>
