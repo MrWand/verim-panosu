@@ -528,9 +528,20 @@ function App({ currentUser, onLogout }) {
     scheduleWrite('entries', key, patch);
   }
 
+  // Sadece seçili istasyonun bugünkü verilerini sıfırlama
+  function resetStationDayData(dKey, stationId, stationName) {
+    if (!confirm(`${stationName} istasyonunun bu güne ait tüm verilerini sıfırlamak istediğinize emin misiniz?`)) return;
+    const key = `${dKey}|${stationId}`;
+    const updatedEntries = { ...data.entries };
+    delete updatedEntries[key];
+    setData((prev) => ({ ...prev, entries: updatedEntries }));
+    db.collection('entries').doc(key).delete().then(() => recordActivity()).catch((e) => console.error('İstasyon sıfırlama hatası', e));
+  }
+
+  // Seçili günün tüm istasyon verilerini sıfırlama
   function resetDayData() {
     const dayLabel = `${DAY_NAMES[dayIndex]} ${selectedDate.getDate()} ${MONTHS[selectedDate.getMonth()]}`;
-    if (!confirm(`${dayLabel} gününe ait tüm istasyon verilerini sıfırlamak istediğinize emin misiniz? Bu işlem geri alınamaz.`)) return;
+    if (!confirm(`${dayLabel} gününe ait TÜM istasyon verilerini sıfırlamak istediğinize emin misiniz? Bu işlem geri alınamaz.`)) return;
 
     const batch = db.batch();
     const updatedEntries = { ...data.entries };
@@ -563,7 +574,6 @@ function App({ currentUser, onLogout }) {
         const hasInput = hasAnyInput(e);
         const isIdle = !!e?.isIdle;
 
-        // Eğer o gün hiçbir giriş yoksa veya gün boşta ise:
         if (!hasInput || isIdle) {
           const result = {
             baseCarry: carry,
@@ -588,7 +598,6 @@ function App({ currentUser, onLogout }) {
           return result;
         }
 
-        // Gün için fiilen giriş yapılmış:
         const isCarryover = carry != null;
         const job1Standard = carry != null ? carry : s.standardHours;
         const job1Actual = parseFloat(e?.actual) || 0;
@@ -952,7 +961,7 @@ function App({ currentUser, onLogout }) {
         {/* Secili Gunun Panosu */}
         <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderTop: 'none', borderBottomLeftRadius: 8, borderBottomRightRadius: 8, padding: 16, marginBottom: 20 }}>
           
-          {/* Gun Islem Cubugu (Sıfırla Butonu) */}
+          {/* Gun Islem Cubugu (Tum Günü Sıfırla Butonu) */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, paddingBottom: 10, borderBottom: `1px solid ${C.border}` }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: C.paper }}>
               {DAY_NAMES[dayIndex]} günü girişleri ({selectedDate.getDate()} {MONTHS[selectedDate.getMonth()]})
@@ -974,7 +983,7 @@ function App({ currentUser, onLogout }) {
               }}
               title="Bu günün tüm istasyon verilerini temizler"
             >
-              <span>🗑️</span> Seçili Günü Sıfırla
+              <span>🗑️</span> Seçili Günü Tamamen Sıfırla
             </button>
           </div>
 
@@ -1039,6 +1048,26 @@ function App({ currentUser, onLogout }) {
                       >
                         {isIdle ? '⏸️ Planlı Boşta' : 'Çalışıyor'}
                       </button>
+
+                      {/* TEK İSTASYON SIFIRLAMA BUTONU */}
+                      {hasAnyInput(entry) && (
+                        <button
+                          onClick={() => resetStationDayData(selectedKey, s.id, s.name)}
+                          style={{
+                            background: 'transparent',
+                            border: `1px solid ${C.border}`,
+                            color: C.dim,
+                            padding: '3px 6px',
+                            borderRadius: 4,
+                            fontSize: 10.5,
+                            cursor: 'pointer'
+                          }}
+                          title="Sadece bu istasyonun bugünkü girişlerini sıfırlar"
+                        >
+                          ↺ Sıfırla
+                        </button>
+                      )}
+
                       {!isIdle && (
                         <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 700, color }}>
                           {eff === null ? '—' : `${Math.round(eff)}%`}
@@ -1219,7 +1248,7 @@ function App({ currentUser, onLogout }) {
                         </span>
                       </div>
 
-                      {/* EK MESAİ KARARI & BUTONLARI (İLK DOSYADAKİ GİBİ TAM FONKSİYONEL) */}
+                      {/* EK MESAİ KARARI & BUTONLARI */}
                       {activeEst?.needsDecision && (
                         <div style={{ marginBottom: 10, background: '#0E1520', padding: 8, borderRadius: 4, border: `1px solid ${C.copper}` }}>
                           <div style={{ fontSize: 11, color: C.copper, marginBottom: 6, fontWeight: 600 }}>⚠ Bu iş normal mesaide (16:55) bitmiyor — mesai yapılacak mı?</div>
