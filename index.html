@@ -10,45 +10,67 @@
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    background-color: #F3F4F6;
-    color: #0F172A;
     font-family: 'Segoe UI Variable Text', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Plus Jakarta Sans', Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
+    transition: background-color 0.25s ease, color 0.25s ease;
   }
   .num-input {
     width: 100%;
-    background: #FFFFFF;
-    border: 1px solid #CBD5E1;
     border-radius: 6px;
-    color: #0F172A;
     padding: 7px 8px;
     font-family: 'JetBrains Mono', 'Segoe UI Mono', monospace;
     font-size: 13px;
     text-align: center;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
   }
   .num-input:focus {
     outline: none;
-    border-color: #0067C0;
-    box-shadow: 0 0 0 3px rgba(0, 103, 192, 0.15);
-    background: #FFFFFF;
   }
-  .num-input::placeholder { color: #94A3B8; }
   .num-input-sm { padding: 5px 6px; font-size: 12px; }
   input[type=number]::-webkit-inner-spin-button,
   input[type=number]::-webkit-outer-spin-button { opacity: 0.5; }
-  .idle-card {
-    opacity: 0.65;
-    background: #F1F5F9 !important;
-    border-color: #E2E8F0 !important;
-  }
   button {
     font-family: inherit;
     transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
   }
   button:active {
     transform: scale(0.98);
+  }
+
+  /* Koyu Mod (Dark Theme) CSS Kuralları */
+  body[data-theme="dark"] .num-input {
+    background: #0E1520;
+    border: 1px solid #233142;
+    color: #F1F5F9;
+    box-shadow: none;
+  }
+  body[data-theme="dark"] .num-input:focus {
+    border-color: #38BDF8;
+    box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+  }
+  body[data-theme="dark"] .num-input::placeholder { color: #475569; }
+  body[data-theme="dark"] .idle-card {
+    opacity: 0.55;
+    background: #0E1520 !important;
+    border-color: #1E293B !important;
+  }
+
+  /* Açık Mod (Windows 11 Light Theme) CSS Kuralları */
+  body[data-theme="light"] .num-input {
+    background: #FFFFFF;
+    border: 1px solid #CBD5E1;
+    color: #0F172A;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  }
+  body[data-theme="light"] .num-input:focus {
+    border-color: #0067C0;
+    box-shadow: 0 0 0 3px rgba(0, 103, 192, 0.15);
+  }
+  body[data-theme="light"] .num-input::placeholder { color: #94A3B8; }
+  body[data-theme="light"] .idle-card {
+    opacity: 0.65;
+    background: #F1F5F9 !important;
+    border-color: #E2E8F0 !important;
   }
 </style>
 </head>
@@ -76,30 +98,157 @@
 </script>
 
 <script type="text/babel" data-presets="react">
-const { useState, useEffect, useRef, useMemo } = React;
+const { useState, useEffect, useRef, useMemo, createContext, useContext } = React;
 const db = window.__db;
 const auth = window.__auth;
 
 const DAY_NAMES = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
 const MONTHS = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
 
-const C = {
-  page: '#F3F4F6',          // Windows 11 light desktop/canvas
-  panel: '#FFFFFF',         // Fluent card surface
-  panelAlt: '#F8FAFC',      // Sub-card background
-  border: '#E2E8F0',        // Subtle Fluent border
-  line: '#0067C0',          // Windows 11 Fluent Blue (signature accent)
-  paper: '#0F172A',         // Primary text (slate-900)
-  dim: '#64748B',           // Muted secondary text (slate-500)
-  copper: '#B45309',        // Soft amber
-  good: '#0F7B0F',          // Fluent success green
-  bad: '#C42B1C',           // Fluent error crimson
-  weekend: '#6366F1',       // Soft indigo/purple
-  groupA: '#0067C0',        // Taşlama
-  groupB: '#7C3AED',        // Kaynak-Montaj
+const THEMES = {
+  light: {
+    name: 'light',
+    page: '#F3F4F6',          // Windows 11 light desktop/canvas
+    panel: '#FFFFFF',         // Fluent card surface
+    panelAlt: '#F8FAFC',      // Sub-card background
+    border: '#E2E8F0',        // Subtle Fluent border
+    line: '#0067C0',          // Windows 11 Fluent Blue (signature accent)
+    paper: '#0F172A',         // Primary text (slate-900)
+    dim: '#64748B',           // Muted secondary text (slate-500)
+    copper: '#B45309',        // Soft amber
+    good: '#0F7B0F',          // Fluent success green
+    bad: '#C42B1C',           // Fluent error crimson
+    weekend: '#6366F1',       // Soft indigo/purple
+    groupA: '#0067C0',        // Taşlama
+    groupB: '#7C3AED',        // Kaynak-Montaj
+    wagonBox: '#F0F9FF',
+    wagonBorder: '#BAE6FD',
+    wagonText: '#0369A1',
+    wagonInputBg: '#FFFFFF',
+    wagonInputBorder: '#7DD3FC',
+    secondJobBg: '#FFFBEB',
+    secondJobBorder: '#FDE68A',
+    secondJobHeader: '#B45309',
+    secondJobSubText: '#78350F',
+    secondJobWagonBox: '#FEF3C7',
+    secondJobWagonBorder: '#FCD34D',
+    secondJobWagonText: '#92400E',
+    totalBoxBg: '#F0F9FF',
+    totalBoxBorder: '#BAE6FD',
+    totalBoxText: '#0369A1',
+    tabStripBg: '#E2E8F0',
+    tabActiveBg: '#FFFFFF',
+    modalOverlay: 'rgba(15, 23, 42, 0.45)',
+    modalCardBg: '#FFFFFF',
+    modalRuleBg: '#F8FAFC',
+    trackBg: '#E2E8F0',
+    trackBorder: '#CBD5E1',
+    cardShadow: '0 1px 3px rgba(0,0,0,0.04)',
+    headerBtnBg: '#F8FAFC',
+    successBadgeBg: '#DCFCE7',
+    successBadgeBorder: '#86EFAC',
+    successBadgeText: '#15803D',
+    warningBadgeBg: '#FEF3C7',
+    warningBadgeBorder: '#FDE68A',
+    warningBadgeText: '#B45309',
+    dangerBadgeBg: '#FEE2E2',
+    dangerBadgeBorder: '#FECACA',
+    dangerBadgeText: '#C42B1C',
+    otFridayBg: '#EEF2FF',
+    otFridayBorder: '#C7D2FE',
+    otFridayText: '#4338CA',
+    otWeekdayBg: '#FFFBEB',
+    otWeekdayBorder: '#FDE68A',
+    otWeekdayText: '#92400E',
+    otOtherBg: '#F8FAFC',
+    cascadeBoxBg: '#F8FAFC',
+    cascadeBoxBorder: '#E2E8F0',
+    cascadeArrow: '#94A3B8',
+    summaryCardBg: '#FFFFFF',
+    loginBg: '#F3F4F6',
+    loginCardBg: '#FFFFFF',
+    loginTabBg: '#F1F5F9',
+    loginActiveTabBg: '#FFFFFF',
+    loginActiveTabText: '#0067C0',
+  },
+  dark: {
+    name: 'dark',
+    page: '#0E1520',          // Dark canvas
+    panel: '#131B26',         // Dark card surface
+    panelAlt: '#182230',      // Dark sub-card
+    border: '#233142',        // Dark border
+    line: '#38BDF8',          // Neon cyan accent
+    paper: '#F1F5F9',         // Light paper text
+    dim: '#94A3B8',           // Muted text
+    copper: '#F59E0B',        // Bright amber
+    good: '#10B981',          // Emerald green
+    bad: '#F43F5E',           // Rose red
+    weekend: '#818CF8',       // Indigo purple
+    groupA: '#38BDF8',        // Taşlama
+    groupB: '#A78BFA',        // Kaynak-Montaj
+    wagonBox: '#0B0F17',
+    wagonBorder: '#233142',
+    wagonText: '#38BDF8',
+    wagonInputBg: '#0E1520',
+    wagonInputBorder: '#233142',
+    secondJobBg: '#0E1520',
+    secondJobBorder: 'rgba(245, 158, 11, 0.4)',
+    secondJobHeader: '#F59E0B',
+    secondJobSubText: '#94A3B8',
+    secondJobWagonBox: '#0B0F17',
+    secondJobWagonBorder: '#233142',
+    secondJobWagonText: '#F59E0B',
+    totalBoxBg: 'rgba(56, 189, 248, 0.05)',
+    totalBoxBorder: '#233142',
+    totalBoxText: '#38BDF8',
+    tabStripBg: '#0B0F17',
+    tabActiveBg: '#182230',
+    modalOverlay: 'rgba(0,0,0,0.7)',
+    modalCardBg: '#131B26',
+    modalRuleBg: '#0E1520',
+    trackBg: 'rgba(255,255,255,0.04)',
+    trackBorder: '#233142',
+    cardShadow: '0 8px 24px rgba(0,0,0,0.4)',
+    headerBtnBg: '#182230',
+    successBadgeBg: 'rgba(16, 185, 129, 0.15)',
+    successBadgeBorder: 'rgba(16, 185, 129, 0.4)',
+    successBadgeText: '#10B981',
+    warningBadgeBg: 'rgba(245, 158, 11, 0.15)',
+    warningBadgeBorder: 'rgba(245, 158, 11, 0.4)',
+    warningBadgeText: '#F59E0B',
+    dangerBadgeBg: 'rgba(244, 63, 94, 0.15)',
+    dangerBadgeBorder: 'rgba(244, 63, 94, 0.4)',
+    dangerBadgeText: '#F43F5E',
+    otFridayBg: '#0E1520',
+    otFridayBorder: '#818CF8',
+    otFridayText: '#818CF8',
+    otWeekdayBg: '#0E1520',
+    otWeekdayBorder: '#F59E0B',
+    otWeekdayText: '#F59E0B',
+    otOtherBg: '#0E1520',
+    cascadeBoxBg: '#182230',
+    cascadeBoxBorder: '#233142',
+    cascadeArrow: '#94A3B8',
+    summaryCardBg: '#131B26',
+    loginBg: '#0B0F17',
+    loginCardBg: '#131B26',
+    loginTabBg: '#0E1520',
+    loginActiveTabBg: '#1E293B',
+    loginActiveTabText: '#38BDF8',
+  }
 };
+
+const ThemeContext = createContext({
+  theme: 'light',
+  toggleTheme: () => {},
+  C: THEMES.light
+});
+
+function useTheme() {
+  return useContext(ThemeContext);
+}
+
 const GROUP_LABEL = { taslama: 'Taşlama', kaynakmontaj: 'Kaynak-Montaj' };
-const GROUP_COLOR = { taslama: C.groupA, kaynakmontaj: C.groupB };
 
 const DEFAULT_STATIONS = [
   { name: 'İlk Temizlik', group: 'taslama', standardHours: 38, active: true },
@@ -252,7 +401,7 @@ function calcEff(totalActual, totalStandard) {
   return Math.min((totalStandard / totalActual) * 100, 999);
 }
 
-function effColor(eff) {
+function effColor(eff, C) {
   if (eff === null) return C.dim;
   if (eff >= 90) return C.good;
   if (eff >= 70) return C.copper;
@@ -264,18 +413,20 @@ function hasAnyInput(e) {
 }
 
 function DimensionBar({ eff, height = 10 }) {
-  const color = effColor(eff);
+  const { C } = useTheme();
+  const color = effColor(eff, C);
   const width = eff === null ? 0 : Math.min(eff, 100);
   return (
-    <div style={{ position: 'relative', height, background: '#E2E8F0', borderRadius: 5, overflow: 'hidden', border: '1px solid #CBD5E1' }}>
+    <div style={{ position: 'relative', height, background: C.trackBg, borderRadius: 5, overflow: 'hidden', border: `1px solid ${C.trackBorder}` }}>
       <div style={{ height: '100%', width: `${width}%`, background: color, transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1)', borderRadius: 4 }} />
     </div>
   );
 }
 
 function TitleCell({ label, children, minWidth }) {
+  const { C } = useTheme();
   return (
-    <div style={{ borderRight: `1px solid ${C.border}`, padding: '12px 16px', minWidth, flex: minWidth ? '0 0 auto' : 1, background: '#FFFFFF' }}>
+    <div style={{ borderRight: `1px solid ${C.border}`, padding: '12px 16px', minWidth, flex: minWidth ? '0 0 auto' : 1, background: C.panel }}>
       <div style={{ fontFamily: "'Segoe UI', sans-serif", fontSize: 11, fontWeight: 600, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>{label}</div>
       {children}
     </div>
@@ -283,8 +434,10 @@ function TitleCell({ label, children, minWidth }) {
 }
 
 function GroupTag({ group }) {
+  const { C } = useTheme();
+  const color = group === 'taslama' ? C.groupA : C.groupB;
   return (
-    <span style={{ fontSize: 10.5, fontWeight: 600, color: GROUP_COLOR[group], border: `1px solid ${GROUP_COLOR[group]}33`, background: `${GROUP_COLOR[group]}12`, borderRadius: 4, padding: '2px 7px', letterSpacing: 0.3 }}>
+    <span style={{ fontSize: 10.5, fontWeight: 600, color: color, border: `1px solid ${color}33`, background: `${color}18`, borderRadius: 4, padding: '2px 7px', letterSpacing: 0.3 }}>
       {GROUP_LABEL[group]}
     </span>
   );
@@ -296,6 +449,7 @@ function usernameToEmail(username) {
 }
 
 function LoginScreen() {
+  const { theme, toggleTheme, C } = useTheme();
   const [mode, setMode] = useState('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -333,30 +487,56 @@ function LoginScreen() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <form onSubmit={handleSubmit} style={{ width: '100%', maxWidth: 360, background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 12, padding: 32, boxShadow: '0 20px 25px -5px rgba(0,0,0,0.06), 0 8px 10px -6px rgba(0,0,0,0.04)' }}>
+    <div style={{ minHeight: '100vh', background: C.loginBg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, position: 'relative' }}>
+      {/* Giriş ekranında tema değiştirici buton */}
+      <button
+        type="button"
+        onClick={toggleTheme}
+        style={{
+          position: 'absolute',
+          top: 20,
+          right: 20,
+          background: C.panel,
+          border: `1px solid ${C.border}`,
+          borderRadius: 6,
+          color: C.paper,
+          padding: '6px 12px',
+          fontSize: 12,
+          fontWeight: 600,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          boxShadow: C.cardShadow
+        }}
+      >
+        <span>{theme === 'light' ? '🌙' : '☀️'}</span>
+        <span>{theme === 'light' ? 'Koyu Mod' : 'Açık Mod'}</span>
+      </button>
+
+      <form onSubmit={handleSubmit} style={{ width: '100%', maxWidth: 360, background: C.loginCardBg, border: `1px solid ${C.border}`, borderRadius: 12, padding: 32, boxShadow: C.cardShadow }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
           <div style={{ width: 34, height: 34, borderRadius: 8, background: 'linear-gradient(135deg, #0078D4, #005A9E)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 16, fontWeight: 700 }}>🚆</div>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 18, color: '#0F172A', letterSpacing: -0.3 }}>İstasyon Verim Panosu</div>
-            <div style={{ fontSize: 12, color: '#64748B' }}>Epsilon Solentek Raylı Sistemler</div>
+            <div style={{ fontWeight: 700, fontSize: 18, color: C.paper, letterSpacing: -0.3 }}>İstasyon Verim Panosu</div>
+            <div style={{ fontSize: 12, color: C.dim }}>Epsilon Solentek Raylı Sistemler</div>
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 6, margin: '22px 0 18px', background: '#F1F5F9', padding: 3, borderRadius: 8 }}>
-          <button type="button" onClick={() => { setMode('login'); setError(''); }} style={{ flex: 1, padding: '7px 0', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', background: mode === 'login' ? '#FFFFFF' : 'transparent', border: mode === 'login' ? '1px solid #E2E8F0' : 'none', color: mode === 'login' ? '#0067C0' : '#64748B', borderRadius: 6, boxShadow: mode === 'login' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none' }}>Giriş Yap</button>
-          <button type="button" onClick={() => { setMode('register'); setError(''); }} style={{ flex: 1, padding: '7px 0', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', background: mode === 'register' ? '#FFFFFF' : 'transparent', border: mode === 'register' ? '1px solid #E2E8F0' : 'none', color: mode === 'register' ? '#0067C0' : '#64748B', borderRadius: 6, boxShadow: mode === 'register' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none' }}>Yeni Hesap</button>
+        <div style={{ display: 'flex', gap: 6, margin: '22px 0 18px', background: C.loginTabBg, padding: 3, borderRadius: 8 }}>
+          <button type="button" onClick={() => { setMode('login'); setError(''); }} style={{ flex: 1, padding: '7px 0', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', background: mode === 'login' ? C.loginActiveTabBg : 'transparent', border: mode === 'login' ? `1px solid ${C.border}` : 'none', color: mode === 'login' ? C.loginActiveTabText : C.dim, borderRadius: 6, boxShadow: mode === 'login' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none' }}>Giriş Yap</button>
+          <button type="button" onClick={() => { setMode('register'); setError(''); }} style={{ flex: 1, padding: '7px 0', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', background: mode === 'register' ? C.loginActiveTabBg : 'transparent', border: mode === 'register' ? `1px solid ${C.border}` : 'none', color: mode === 'register' ? C.loginActiveTabText : C.dim, borderRadius: 6, boxShadow: mode === 'register' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none' }}>Yeni Hesap</button>
         </div>
 
-        <div style={{ fontSize: 11.5, fontWeight: 600, color: '#475569', marginBottom: 5 }}>Kullanıcı adı</div>
+        <div style={{ fontSize: 11.5, fontWeight: 600, color: C.dim, marginBottom: 5 }}>Kullanıcı adı</div>
         <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="örn. ahmet" className="num-input" style={{ marginBottom: 14, textAlign: 'left' }} />
         
-        <div style={{ fontSize: 11.5, fontWeight: 600, color: '#475569', marginBottom: 5 }}>Şifre</div>
+        <div style={{ fontSize: 11.5, fontWeight: 600, color: C.dim, marginBottom: 5 }}>Şifre</div>
         <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="en az 6 karakter" className="num-input" style={{ marginBottom: 18, textAlign: 'left' }} />
         
-        {error && <div style={{ fontSize: 12, color: '#C42B1C', background: '#FEE2E2', padding: '8px 12px', borderRadius: 6, marginBottom: 14, border: '1px solid #FECACA' }}>{error}</div>}
+        {error && <div style={{ fontSize: 12, color: C.bad, background: C.dangerBadgeBg, padding: '8px 12px', borderRadius: 6, marginBottom: 14, border: `1px solid ${C.dangerBadgeBorder}` }}>{error}</div>}
         
-        <button type="submit" disabled={busy} style={{ width: '100%', padding: '10px 0', background: '#0067C0', border: 'none', borderRadius: 6, color: '#FFFFFF', fontWeight: 600, fontSize: 13, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1, boxShadow: '0 2px 4px rgba(0,103,192,0.2)' }}>
+        <button type="submit" disabled={busy} style={{ width: '100%', padding: '10px 0', background: C.line, border: 'none', borderRadius: 6, color: theme === 'light' ? '#FFFFFF' : '#0B0F17', fontWeight: 700, fontSize: 13, cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.7 : 1, boxShadow: '0 2px 4px rgba(0,103,192,0.2)' }}>
           {busy ? 'Bekleyin…' : mode === 'register' ? 'Hesap Oluştur' : 'Giriş Yap'}
         </button>
       </form>
@@ -365,6 +545,7 @@ function LoginScreen() {
 }
 
 function App({ currentUser, onLogout }) {
+  const { theme, toggleTheme, C } = useTheme();
   const [data, setData] = useState({ stations: [], entries: {}, settings: { allowancePercent: 10 } });
   const [connected, setConnected] = useState(true);
   const [weekStart, setWeekStart] = useState(() => getMonday(new Date()));
@@ -987,16 +1168,16 @@ function App({ currentUser, onLogout }) {
       <div style={{ maxWidth: 980, margin: '0 auto' }}>
 
         {/* Ust Baslik Blogu */}
-        <div style={{ border: `1px solid ${C.border}`, background: C.panel, borderRadius: 10, marginBottom: 16, display: 'flex', flexWrap: 'wrap', overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+        <div style={{ border: `1px solid ${C.border}`, background: C.panel, borderRadius: 10, marginBottom: 16, display: 'flex', flexWrap: 'wrap', overflow: 'hidden', boxShadow: C.cardShadow }}>
           <TitleCell label="Proje" minWidth={210}>
             <div style={{ fontWeight: 700, fontSize: 17, color: C.paper }}>İstasyon Verim Panosu</div>
             <div style={{ fontSize: 12, color: C.dim, marginTop: 2 }}>Epsilon Solentek Raylı Sistemler</div>
           </TitleCell>
           <TitleCell label="Hafta" minWidth={210}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <button onClick={() => setWeekStart((w) => addDays(w, -7))} style={{ background: '#F8FAFC', border: `1px solid ${C.border}`, borderRadius: 6, color: C.paper, cursor: 'pointer', fontSize: 14, padding: '3px 9px' }}>‹</button>
+              <button onClick={() => setWeekStart((w) => addDays(w, -7))} style={{ background: C.headerBtnBg, border: `1px solid ${C.border}`, borderRadius: 6, color: C.paper, cursor: 'pointer', fontSize: 14, padding: '3px 9px' }}>‹</button>
               <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600, color: C.paper }}>{formatRange(weekStart)}</span>
-              <button onClick={() => setWeekStart((w) => addDays(w, 7))} style={{ background: '#F8FAFC', border: `1px solid ${C.border}`, borderRadius: 6, color: C.paper, cursor: 'pointer', fontSize: 14, padding: '3px 9px' }}>›</button>
+              <button onClick={() => setWeekStart((w) => addDays(w, 7))} style={{ background: C.headerBtnBg, border: `1px solid ${C.border}`, borderRadius: 6, color: C.paper, cursor: 'pointer', fontSize: 14, padding: '3px 9px' }}>›</button>
             </div>
           </TitleCell>
           <TitleCell label="Vardiya (06:55–16:55)" minWidth={140}>
@@ -1009,7 +1190,7 @@ function App({ currentUser, onLogout }) {
               <span style={{ fontSize: 12, color: C.dim }}>%</span>
             </div>
           </TitleCell>
-          <div style={{ padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 14, background: '#FFFFFF' }}>
+          <div style={{ padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 14, background: C.panel }}>
             <div>
               <div style={{ fontFamily: "'Segoe UI', sans-serif", fontSize: 11, fontWeight: 600, color: C.dim, textTransform: 'uppercase', marginBottom: 2 }}>Ort. Verim</div>
               <div style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 24, color: C.line, lineHeight: 1 }}>
@@ -1023,7 +1204,7 @@ function App({ currentUser, onLogout }) {
           </div>
         </div>
 
-        {/* Kullanici Bilgisi, Cikis & Haftasonu Mesaisi Butonu */}
+        {/* Kullanici Bilgisi, Cikis, Tema Degistir & Haftasonu Mesaisi Butonu */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 16, fontSize: 12, color: C.dim }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <span>Kullanıcı: <strong style={{ color: C.paper }}>{username}</strong></span>
@@ -1032,12 +1213,35 @@ function App({ currentUser, onLogout }) {
             )}
           </div>
           
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {/* TEMA DEĞİŞTİRME BUTONU (LIGHT / DARK) */}
+            <button
+              onClick={toggleTheme}
+              style={{
+                background: C.headerBtnBg,
+                border: `1px solid ${C.border}`,
+                borderRadius: 6,
+                color: C.paper,
+                padding: '6px 12px',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                boxShadow: C.cardShadow
+              }}
+              title={theme === 'light' ? 'Koyu Moda Geç' : 'Açık Moda Geç'}
+            >
+              <span>{theme === 'light' ? '🌙' : '☀️'}</span>
+              <span>{theme === 'light' ? 'Koyu Mod' : 'Açık Mod'}</span>
+            </button>
+
             <button 
               onClick={() => setShowWeekendModal(true)} 
               style={{
-                background: '#EEF2FF',
-                border: '1px solid #C7D2FE',
+                background: theme === 'light' ? '#EEF2FF' : 'rgba(129, 140, 248, 0.15)',
+                border: `1px solid ${theme === 'light' ? '#C7D2FE' : C.weekend}`,
                 borderRadius: 6,
                 color: C.weekend,
                 padding: '6px 12px',
@@ -1047,30 +1251,30 @@ function App({ currentUser, onLogout }) {
                 display: 'flex',
                 alignItems: 'center',
                 gap: 6,
-                boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
+                boxShadow: C.cardShadow
               }}
             >
               <span>🛠️</span> Haftasonu Mesaisi (Cmt / Paz)
             </button>
-            <button onClick={() => auth.signOut()} style={{ background: '#FFFFFF', border: `1px solid ${C.border}`, borderRadius: 6, color: C.dim, padding: '5px 12px', fontSize: 11.5, cursor: 'pointer' }}>Çıkış Yap</button>
+            <button onClick={() => auth.signOut()} style={{ background: C.headerBtnBg, border: `1px solid ${C.border}`, borderRadius: 6, color: C.dim, padding: '5px 12px', fontSize: 11.5, cursor: 'pointer' }}>Çıkış Yap</button>
           </div>
         </div>
 
         {/* HAFTASONU MESAİSİ BİLGİLENDİRME & HIZLI ERİŞİM MODALI */}
         {showWeekendModal && (
-          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.45)', backdropFilter: 'blur(4px)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-            <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 12, width: '100%', maxWidth: 520, padding: 24, boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.05)' }}>
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: C.modalOverlay, backdropFilter: 'blur(4px)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+            <div style={{ background: C.modalCardBg, border: `1px solid ${C.border}`, borderRadius: 12, width: '100%', maxWidth: 520, padding: 24, boxShadow: C.cardShadow }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, borderBottom: `1px solid ${C.border}`, paddingBottom: 10 }}>
                 <span style={{ fontSize: 15, fontWeight: 700, color: C.weekend, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span>🛠️</span> Haftasonu Mesai Yönetimi (Cmt & Paz)
                 </span>
-                <button onClick={() => setShowWeekendModal(false)} style={{ background: '#F1F5F9', border: 'none', borderRadius: '50%', width: 26, height: 26, color: C.dim, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+                <button onClick={() => setShowWeekendModal(false)} style={{ background: C.panelAlt, border: 'none', borderRadius: '50%', width: 26, height: 26, color: C.dim, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
               </div>
 
               <div style={{ fontSize: 12.5, color: C.paper, lineHeight: 1.6, marginBottom: 18 }}>
-                <div style={{ padding: 12, background: '#F8FAFC', borderRadius: 8, border: `1px solid ${C.border}` }}>
+                <div style={{ padding: 12, background: C.modalRuleBg, borderRadius: 8, border: `1px solid ${C.border}` }}>
                   <strong style={{ color: C.line }}>Haftasonu Mesai Kuralları:</strong>
-                  <ul style={{ margin: '6px 0 0', paddingLeft: 18, color: '#475569', fontSize: 12 }}>
+                  <ul style={{ margin: '6px 0 0', paddingLeft: 18, color: C.dim, fontSize: 12 }}>
                     <li>Cumartesi ve Pazar günleri haftaiçi ile <strong>tamamen aynı</strong> çalışma ve mola saatlerine sahiptir.</li>
                     <li>Mesai Saatleri: <strong>06:55 – 16:55</strong> (Net 8 saat 35 dk çalışma).</li>
                     <li>Mola Saatleri: 09:30–09:45, 12:00–12:50 (Yemek), 15:15–15:30.</li>
@@ -1082,13 +1286,13 @@ function App({ currentUser, onLogout }) {
               <div style={{ display: 'flex', gap: 8 }}>
                 <button
                   onClick={() => { setDayIndex(5); setShowWeekendModal(false); }}
-                  style={{ flex: 1, padding: '10px 0', background: '#EEF2FF', border: `1px solid ${C.weekend}`, color: C.weekend, borderRadius: 6, fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }}
+                  style={{ flex: 1, padding: '10px 0', background: theme === 'light' ? '#EEF2FF' : 'rgba(129, 140, 248, 0.15)', border: `1px solid ${C.weekend}`, color: C.weekend, borderRadius: 6, fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }}
                 >
                   📅 Cumartesi Girişlerine Git
                 </button>
                 <button
                   onClick={() => { setDayIndex(6); setShowWeekendModal(false); }}
-                  style={{ flex: 1, padding: '10px 0', background: '#EEF2FF', border: `1px solid ${C.weekend}`, color: C.weekend, borderRadius: 6, fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }}
+                  style={{ flex: 1, padding: '10px 0', background: theme === 'light' ? '#EEF2FF' : 'rgba(129, 140, 248, 0.15)', border: `1px solid ${C.weekend}`, color: C.weekend, borderRadius: 6, fontWeight: 600, fontSize: 12.5, cursor: 'pointer' }}
                 >
                   📅 Pazar Girişlerine Git
                 </button>
@@ -1103,14 +1307,14 @@ function App({ currentUser, onLogout }) {
             <span style={{ fontSize: 12, fontWeight: 600, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.5 }}>İstasyon Tanımları & Standart Saatler</span>
             <button 
               onClick={() => setShowInactiveStations(!showInactiveStations)} 
-              style={{ background: '#FFFFFF', border: `1px solid ${C.border}`, borderRadius: 6, color: showInactiveStations ? C.good : C.dim, fontSize: 11.5, padding: '4px 10px', cursor: 'pointer', fontWeight: 500 }}>
+              style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 6, color: showInactiveStations ? C.good : C.dim, fontSize: 11.5, padding: '4px 10px', cursor: 'pointer', fontWeight: 500 }}>
               {showInactiveStations ? '✓ Pasifler Gösteriliyor' : '+ Pasif İstasyonları Göster'}
             </button>
           </div>
-          <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+          <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, boxShadow: C.cardShadow }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
               {displayedStations.map((s) => (
-                <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: s.active === false ? '#F1F5F9' : C.panelAlt, border: `1px solid ${C.border}`, borderRadius: 6, padding: '7px 10px', opacity: s.active === false ? 0.6 : 1 }}>
+                <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: s.active === false ? (theme === 'light' ? '#F1F5F9' : '#0B0F17') : C.panelAlt, border: `1px solid ${C.border}`, borderRadius: 6, padding: '7px 10px', opacity: s.active === false ? 0.6 : 1 }}>
                   <GroupTag group={s.group} />
                   <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: s.active === false ? C.dim : C.paper }}>
                     {s.name} {s.active === false && <span style={{ fontSize: 11, color: C.bad }}>(Pasif)</span>}
@@ -1123,28 +1327,28 @@ function App({ currentUser, onLogout }) {
                   />
                   <button 
                     onClick={() => toggleStationActive(s.id, s.active !== false)} 
-                    style={{ background: s.active === false ? '#FEE2E2' : '#DCFCE7', border: `1px solid ${s.active === false ? '#FECACA' : '#86EFAC'}`, color: s.active === false ? C.bad : C.good, cursor: 'pointer', padding: '4px 10px', fontSize: 11, fontWeight: 600, borderRadius: 4 }}
+                    style={{ background: s.active === false ? C.dangerBadgeBg : C.successBadgeBg, border: `1px solid ${s.active === false ? C.dangerBadgeBorder : C.successBadgeBorder}`, color: s.active === false ? C.bad : C.good, cursor: 'pointer', padding: '4px 10px', fontSize: 11, fontWeight: 600, borderRadius: 4 }}
                   >
                     {s.active === false ? 'Pasif' : 'Aktif'}
                   </button>
-                  <button onClick={() => removeStation(s.id)} style={{ background: 'transparent', border: 'none', color: '#94A3B8', cursor: 'pointer', padding: '0 4px', fontSize: 16 }} title="Tamamen Sil">×</button>
+                  <button onClick={() => removeStation(s.id)} style={{ background: 'transparent', border: 'none', color: C.dim, cursor: 'pointer', padding: '0 4px', fontSize: 16 }} title="Tamamen Sil">×</button>
                 </div>
               ))}
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <input value={newStation} onChange={(e) => setNewStation(e.target.value)} placeholder="Yeni istasyon adı" style={{ flex: 2, minWidth: 160, background: '#FFFFFF', border: `1px solid ${C.border}`, borderRadius: 6, color: C.paper, padding: '8px 10px', fontSize: 13 }} />
+              <input value={newStation} onChange={(e) => setNewStation(e.target.value)} placeholder="Yeni istasyon adı" style={{ flex: 2, minWidth: 160, background: C.page, border: `1px solid ${C.border}`, borderRadius: 6, color: C.paper, padding: '8px 10px', fontSize: 13 }} />
               <div style={{ display: 'flex', gap: 4 }}>
-                <button onClick={() => setNewGroup('taslama')} style={{ fontSize: 11.5, fontWeight: 600, padding: '0 12px', cursor: 'pointer', borderRadius: 6, background: newGroup === 'taslama' ? '#E0F2FE' : '#F8FAFC', border: `1px solid ${newGroup === 'taslama' ? '#0067C0' : C.border}`, color: newGroup === 'taslama' ? '#0067C0' : C.dim }}>Taşlama</button>
-                <button onClick={() => setNewGroup('kaynakmontaj')} style={{ fontSize: 11.5, fontWeight: 600, padding: '0 12px', cursor: 'pointer', borderRadius: 6, background: newGroup === 'kaynakmontaj' ? '#F3E8FF' : '#F8FAFC', border: `1px solid ${newGroup === 'kaynakmontaj' ? '#7C3AED' : C.border}`, color: newGroup === 'kaynakmontaj' ? '#7C3AED' : C.dim }}>Kaynak-Montaj</button>
+                <button onClick={() => setNewGroup('taslama')} style={{ fontSize: 11.5, fontWeight: 600, padding: '0 12px', cursor: 'pointer', borderRadius: 6, background: newGroup === 'taslama' ? `${C.groupA}22` : C.panelAlt, border: `1px solid ${newGroup === 'taslama' ? C.groupA : C.border}`, color: newGroup === 'taslama' ? C.groupA : C.dim }}>Taşlama</button>
+                <button onClick={() => setNewGroup('kaynakmontaj')} style={{ fontSize: 11.5, fontWeight: 600, padding: '0 12px', cursor: 'pointer', borderRadius: 6, background: newGroup === 'kaynakmontaj' ? `${C.groupB}22` : C.panelAlt, border: `1px solid ${newGroup === 'kaynakmontaj' ? C.groupB : C.border}`, color: newGroup === 'kaynakmontaj' ? C.groupB : C.dim }}>Kaynak-Montaj</button>
               </div>
               <input type="number" min="0" step="0.5" placeholder="Standart a-s" className="num-input" style={{ width: 115 }} value={newStandard} onChange={(e) => setNewStandard(e.target.value)} />
-              <button onClick={addStation} style={{ background: '#0067C0', border: 'none', borderRadius: 6, color: '#FFFFFF', padding: '0 20px', cursor: 'pointer', fontWeight: 600, fontSize: 13, boxShadow: '0 1px 2px rgba(0,103,192,0.2)' }}>Ekle</button>
+              <button onClick={addStation} style={{ background: C.line, border: 'none', borderRadius: 6, color: theme === 'light' ? '#FFFFFF' : '#0B0F17', padding: '0 20px', cursor: 'pointer', fontWeight: 700, fontSize: 13, boxShadow: '0 1px 2px rgba(0,103,192,0.2)' }}>Ekle</button>
             </div>
           </div>
         </div>
 
         {/* Gun Sekmeleri */}
-        <div style={{ display: 'flex', gap: 6, padding: 4, background: '#E2E8F0', borderRadius: 10, marginBottom: 12 }}>
+        <div style={{ display: 'flex', gap: 6, padding: 4, background: C.tabStripBg, borderRadius: 10, marginBottom: 12, border: `1px solid ${C.border}` }}>
           {weekDates.map((d, i) => {
             const active = i === dayIndex;
             const hasData = hasDataForDate(d);
@@ -1155,14 +1359,14 @@ function App({ currentUser, onLogout }) {
                 onClick={() => setDayIndex(i)} 
                 style={{ 
                   flex: 1, 
-                  background: active ? '#FFFFFF' : 'transparent', 
-                  border: 'none', 
+                  background: active ? C.tabActiveBg : 'transparent', 
+                  border: active ? `1px solid ${C.border}` : '1px solid transparent', 
                   borderRadius: 7, 
                   padding: '9px 4px', 
                   cursor: 'pointer', 
-                  color: active ? (isWeekend ? '#4F46E5' : '#0F172A') : (isWeekend ? '#6366F1' : '#64748B'), 
+                  color: active ? (isWeekend ? C.weekend : C.paper) : (isWeekend ? `${C.weekend}aa` : C.dim), 
                   position: 'relative',
-                  boxShadow: active ? '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)' : 'none',
+                  boxShadow: active ? C.cardShadow : 'none',
                   transition: 'all 0.15s ease'
                 }}
               >
@@ -1175,7 +1379,7 @@ function App({ currentUser, onLogout }) {
         </div>
 
         {/* Secili Gunun Panosu */}
-        <div style={{ background: C.panel, border: `1px solid ${isWeekendDay ? '#C7D2FE' : C.border}`, borderRadius: 10, padding: 18, marginBottom: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+        <div style={{ background: C.panel, border: `1px solid ${isWeekendDay ? (theme === 'light' ? '#C7D2FE' : C.weekend) : C.border}`, borderRadius: 10, padding: 18, marginBottom: 20, boxShadow: C.cardShadow }}>
           
           {/* Gun Islem Cubugu */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
@@ -1188,8 +1392,8 @@ function App({ currentUser, onLogout }) {
             <button
               onClick={resetDayData}
               style={{
-                background: '#FEE2E2',
-                border: '1px solid #FECACA',
+                background: C.dangerBadgeBg,
+                border: `1px solid ${C.dangerBadgeBorder}`,
                 color: C.bad,
                 padding: '5px 12px',
                 borderRadius: 6,
@@ -1215,7 +1419,7 @@ function App({ currentUser, onLogout }) {
               const totalActual = (parseFloat(entry.actual) || 0) + (entry.hasSecondJob ? (parseFloat(entry.secondJobActual) || 0) : 0);
               const totalStandard = cDay ? cDay.totalStandard : s.standardHours;
               const eff = calcEff(totalActual, totalStandard);
-              const color = effColor(eff);
+              const color = effColor(eff, C);
               
               const totalStaff = parseFloat(entry.totalStaff) || 0;
               const absentStaff = parseFloat(entry.absentStaff) || 0;
@@ -1258,7 +1462,7 @@ function App({ currentUser, onLogout }) {
               const activeJobName = hasJob2 ? '2. İş' : '1. İş';
 
               return (
-                <div key={s.id} className={isIdle ? 'idle-card' : ''} style={{ background: isIdle ? '#F8FAFC' : '#FFFFFF', border: `1px solid ${isWeekendDay ? '#C7D2FE' : C.border}`, borderRadius: 8, padding: 14, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+                <div key={s.id} className={isIdle ? 'idle-card' : ''} style={{ background: isIdle ? C.panelAlt : C.panel, border: `1px solid ${isWeekendDay ? (theme === 'light' ? '#C7D2FE' : C.weekend) : C.border}`, borderRadius: 8, padding: 14, boxShadow: C.cardShadow }}>
                   
                   {/* Kart Ust Basligi */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -1268,9 +1472,9 @@ function App({ currentUser, onLogout }) {
                       <button
                         onClick={() => toggleDayIdle(selectedKey, s.id)}
                         style={{
-                          background: isIdle ? '#FEF3C7' : '#F8FAFC',
+                          background: isIdle ? C.warningBadgeBg : C.panelAlt,
                           color: isIdle ? C.copper : C.dim,
-                          border: `1px solid ${isIdle ? '#FDE68A' : C.border}`,
+                          border: `1px solid ${isIdle ? C.warningBadgeBorder : C.border}`,
                           fontSize: 10.5,
                           padding: '3px 8px',
                           borderRadius: 4,
@@ -1285,7 +1489,7 @@ function App({ currentUser, onLogout }) {
                         <button
                           onClick={() => resetStationDayData(selectedKey, s.id, s.name)}
                           style={{
-                            background: '#F8FAFC',
+                            background: C.panelAlt,
                             border: `1px solid ${C.border}`,
                             color: C.dim,
                             padding: '3px 6px',
@@ -1315,15 +1519,15 @@ function App({ currentUser, onLogout }) {
                   </div>
 
                   {isIdle ? (
-                    <div style={{ padding: '16px 10px', textAlign: 'center', background: '#F8FAFC', border: `1px dashed ${C.border}`, borderRadius: 6, marginTop: 10 }}>
+                    <div style={{ padding: '16px 10px', textAlign: 'center', background: C.panelAlt, border: `1px dashed ${C.border}`, borderRadius: 6, marginTop: 10 }}>
                       <div style={{ fontSize: 12, color: C.copper, fontWeight: 600, marginBottom: 3 }}>İstasyon Bugün Planlı Olarak Boşta</div>
                       <div style={{ fontSize: 11, color: C.dim }}>Verim ortalamaları ve alarmlar etkilenmez.</div>
                     </div>
                   ) : (
                     <>
                       {/* Vagon Numarası & Durumu */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, background: '#F0F9FF', padding: '6px 10px', borderRadius: 6, border: '1px solid #BAE6FD' }}>
-                        <span style={{ fontSize: 11, color: '#0369A1', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, background: C.wagonBox, padding: '6px 10px', borderRadius: 6, border: `1px solid ${C.wagonBorder}` }}>
+                        <span style={{ fontSize: 11, color: C.wagonText, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
                           <span>🚆</span> Vagon No:
                         </span>
                         <input 
@@ -1333,10 +1537,10 @@ function App({ currentUser, onLogout }) {
                           onChange={(e) => updateEntry(selectedKey, s.id, 'wagonNo', e.target.value)}
                           style={{
                             flex: 1,
-                            background: '#FFFFFF',
-                            border: '1px solid #7DD3FC',
+                            background: C.wagonInputBg,
+                            border: `1px solid ${C.wagonInputBorder}`,
                             borderRadius: 4,
-                            color: '#0369A1',
+                            color: C.wagonText,
                             fontWeight: 600,
                             padding: '5px 8px',
                             fontSize: 12,
@@ -1344,14 +1548,14 @@ function App({ currentUser, onLogout }) {
                           }}
                         />
                         {(entry.wagonNo || cDay?.job1WagonNo) && (
-                          <span style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 4, background: entry.job1Status === 'in_progress' ? '#FEF3C7' : (isJob1Completed ? '#DCFCE7' : '#E0F2FE'), color: entry.job1Status === 'in_progress' ? '#B45309' : (isJob1Completed ? '#0F7B0F' : '#0369A1'), border: `1px solid ${entry.job1Status === 'in_progress' ? '#FDE68A' : (isJob1Completed ? '#86EFAC' : '#BAE6FD')}`, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                          <span style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 4, background: entry.job1Status === 'in_progress' ? C.warningBadgeBg : (isJob1Completed ? C.successBadgeBg : `${C.line}22`), color: entry.job1Status === 'in_progress' ? C.copper : (isJob1Completed ? C.good : C.line), border: `1px solid ${entry.job1Status === 'in_progress' ? C.warningBadgeBorder : (isJob1Completed ? C.successBadgeBorder : `${C.line}44`)}`, fontWeight: 600, whiteSpace: 'nowrap' }}>
                             {entry.job1Status === 'in_progress' ? '⏳ Devam' : (isJob1Completed ? '✓ Bitti' : 'İşlemde')}
                           </span>
                         )}
                       </div>
 
                       {/* Personel Girisi */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10, background: '#F8FAFC', padding: 8, borderRadius: 6, border: `1px solid ${C.border}` }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10, background: C.panelAlt, padding: 8, borderRadius: 6, border: `1px solid ${C.border}` }}>
                         <div>
                           <div style={{ fontSize: 10.5, color: C.dim, marginBottom: 3, textAlign: 'center', fontWeight: 500 }}>Mevcut Personel</div>
                           <input type="number" min="0" step="1" className="num-input num-input-sm" placeholder="0" value={entry.totalStaff || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'totalStaff', e.target.value)} />
@@ -1368,7 +1572,7 @@ function App({ currentUser, onLogout }) {
                       </div>
 
                       {/* 1. İŞ KUTUSU */}
-                      <div style={{ background: '#F8FAFC', border: `1px solid ${C.border}`, borderRadius: 6, padding: 10, marginBottom: 10 }}>
+                      <div style={{ background: C.panelAlt, border: `1px solid ${C.border}`, borderRadius: 6, padding: 10, marginBottom: 10 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                           <span style={{ fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace", color: cDay?.isCarryover ? C.copper : C.paper, fontWeight: 700 }}>
                             {cDay?.isCarryover ? `↷ 1. İŞ: DÜNDEN KALAN (${cDay.job1Standard.toFixed(1)} a-s)` : `1. İŞ: STANDART (${s.standardHours != null ? `${s.standardHours} a-s` : '—'})`}
@@ -1378,8 +1582,8 @@ function App({ currentUser, onLogout }) {
                             <button
                               onClick={() => updateEntry(selectedKey, s.id, 'job1Status', entry.job1Status === 'in_progress' ? 'completed' : 'in_progress')}
                               style={{
-                                background: entry.job1Status === 'in_progress' ? '#FEF3C7' : '#DCFCE7',
-                                border: `1px solid ${entry.job1Status === 'in_progress' ? '#FDE68A' : '#86EFAC'}`,
+                                background: entry.job1Status === 'in_progress' ? C.warningBadgeBg : C.successBadgeBg,
+                                border: `1px solid ${entry.job1Status === 'in_progress' ? C.warningBadgeBorder : C.successBadgeBorder}`,
                                 color: entry.job1Status === 'in_progress' ? C.copper : C.good,
                                 fontSize: 10.5,
                                 padding: '3px 8px',
@@ -1401,7 +1605,7 @@ function App({ currentUser, onLogout }) {
                           </div>
                           <div>
                             <div style={{ fontSize: 9.5, color: C.copper, marginBottom: 3, textAlign: 'center', fontWeight: 600 }}>Teorik Bitiş</div>
-                            <div style={{ background: '#FFFBEB', border: `1px solid #FDE68A`, borderRadius: 4, padding: '5px 2px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: j1Est?.mode === 'exceeds' || j1Est?.mode === 'carryover' ? C.bad : j1Est?.mode?.includes('weekend') ? C.weekend : j1Est?.mode === 'overtime' ? C.copper : C.good, fontWeight: 700 }}>
+                            <div style={{ background: C.warningBadgeBg, border: `1px solid ${C.warningBadgeBorder}`, borderRadius: 4, padding: '5px 2px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: j1Est?.mode === 'exceeds' || j1Est?.mode === 'carryover' ? C.bad : j1Est?.mode?.includes('weekend') ? C.weekend : j1Est?.mode === 'overtime' ? C.copper : C.good, fontWeight: 700 }}>
                               {j1Est ? j1Est.label : '—'}
                             </div>
                           </div>
@@ -1411,7 +1615,7 @@ function App({ currentUser, onLogout }) {
                           </div>
                           <div>
                             <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>Harcanan</div>
-                            <div style={{ background: '#FFFFFF', border: `1px solid ${C.border}`, borderRadius: 4, padding: '5px 2px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: C.paper, fontWeight: 700 }}>
+                            <div style={{ background: C.wagonInputBg, border: `1px solid ${C.border}`, borderRadius: 4, padding: '5px 2px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: C.paper, fontWeight: 700 }}>
                               {entry.actual ? `${parseFloat(entry.actual).toFixed(1)} a-s` : '—'}
                             </div>
                           </div>
@@ -1431,9 +1635,9 @@ function App({ currentUser, onLogout }) {
                           onClick={() => toggleSecondJob(selectedKey, s.id, entry.actualEndTime, s.standardHours)}
                           style={{
                             width: '100%',
-                            background: '#F0FDF4',
-                            border: '1px dashed #86EFAC',
-                            color: '#15803D',
+                            background: C.successBadgeBg,
+                            border: `1px dashed ${C.successBadgeBorder}`,
+                            color: C.good,
                             padding: '9px 8px',
                             borderRadius: 6,
                             cursor: 'pointer',
@@ -1449,9 +1653,9 @@ function App({ currentUser, onLogout }) {
                           <span>➕</span> Gün İçinde 2. Yeni İşi Başlat
                         </button>
                       ) : (
-                        <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 6, padding: 10, marginBottom: 10 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, borderBottom: '1px solid #FDE68A', paddingBottom: 6 }}>
-                            <span style={{ fontSize: 11.5, color: '#B45309', fontWeight: 700 }}>
+                        <div style={{ background: C.secondJobBg, border: `1px solid ${C.secondJobBorder}`, borderRadius: 6, padding: 10, marginBottom: 10 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, borderBottom: `1px solid ${C.secondJobBorder}`, paddingBottom: 6 }}>
+                            <span style={{ fontSize: 11.5, color: C.secondJobHeader, fontWeight: 700 }}>
                               ⚡ 2. İŞ (GÜN İÇİNDE BAŞLAYAN YENİ İŞ)
                             </span>
                             
@@ -1459,8 +1663,8 @@ function App({ currentUser, onLogout }) {
                               <button
                                 onClick={() => updateEntry(selectedKey, s.id, 'secondJobStatus', entry.secondJobStatus === 'in_progress' ? 'completed' : 'in_progress')}
                                 style={{
-                                  background: entry.secondJobStatus === 'in_progress' ? '#FEF3C7' : '#DCFCE7',
-                                  border: `1px solid ${entry.secondJobStatus === 'in_progress' ? '#FDE68A' : '#86EFAC'}`,
+                                  background: entry.secondJobStatus === 'in_progress' ? C.warningBadgeBg : C.successBadgeBg,
+                                  border: `1px solid ${entry.secondJobStatus === 'in_progress' ? C.warningBadgeBorder : C.successBadgeBorder}`,
                                   color: entry.secondJobStatus === 'in_progress' ? C.copper : C.good,
                                   fontSize: 10.5,
                                   padding: '2px 6px',
@@ -1476,8 +1680,8 @@ function App({ currentUser, onLogout }) {
                                 type="button"
                                 onClick={() => toggleSecondJob(selectedKey, s.id, entry.actualEndTime, s.standardHours)}
                                 style={{
-                                  background: '#FEE2E2',
-                                  border: '1px solid #FECACA',
+                                  background: C.dangerBadgeBg,
+                                  border: `1px solid ${C.dangerBadgeBorder}`,
                                   color: C.bad,
                                   fontSize: 10.5,
                                   padding: '2px 6px',
@@ -1492,18 +1696,18 @@ function App({ currentUser, onLogout }) {
                           </div>
 
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                            <span style={{ fontSize: 11, color: '#78350F', fontWeight: 500 }}>Yeni İş Standart:</span>
+                            <span style={{ fontSize: 11, color: C.secondJobSubText, fontWeight: 500 }}>Yeni İş Standart:</span>
                             <input
                               type="number" min="0" step="0.5" placeholder="a-s"
                               className="num-input num-input-sm" style={{ width: 70, padding: '3px 6px' }}
                               value={entry.secondJobStandard || ''}
                               onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobStandard', e.target.value)}
                             />
-                            <span style={{ fontSize: 11, color: '#78350F' }}>adam-saat</span>
+                            <span style={{ fontSize: 11, color: C.secondJobSubText }}>adam-saat</span>
                           </div>
 
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, background: '#FEF3C7', padding: '5px 8px', borderRadius: 4, border: '1px solid #FCD34D' }}>
-                            <span style={{ fontSize: 11, color: '#92400E', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", whiteSpace: 'nowrap' }}>🚆 2. İş Vagon No:</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, background: C.secondJobWagonBox, padding: '5px 8px', borderRadius: 4, border: `1px solid ${C.secondJobWagonBorder}` }}>
+                            <span style={{ fontSize: 11, color: C.secondJobWagonText, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", whiteSpace: 'nowrap' }}>🚆 2. İş Vagon No:</span>
                             <input 
                               type="text"
                               placeholder={entry.wagonNo || "örn. V-102"}
@@ -1511,10 +1715,10 @@ function App({ currentUser, onLogout }) {
                               onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobWagonNo', e.target.value)}
                               style={{
                                 flex: 1,
-                                background: '#FFFFFF',
-                                border: '1px solid #FCD34D',
+                                background: C.wagonInputBg,
+                                border: `1px solid ${C.secondJobWagonBorder}`,
                                 borderRadius: 4,
-                                color: '#92400E',
+                                color: C.secondJobWagonText,
                                 fontWeight: 600,
                                 padding: '4px 6px',
                                 fontSize: 11,
@@ -1522,7 +1726,7 @@ function App({ currentUser, onLogout }) {
                               }}
                             />
                             {entry.secondJobWagonNo && (
-                              <span style={{ fontSize: 10, padding: '2px 5px', borderRadius: 4, background: entry.secondJobStatus === 'in_progress' ? '#FEF3C7' : (isJob2Completed ? '#DCFCE7' : '#E0F2FE'), color: entry.secondJobStatus === 'in_progress' ? '#92400E' : (isJob2Completed ? '#15803D' : '#0369A1'), border: `1px solid ${entry.secondJobStatus === 'in_progress' ? '#FCD34D' : (isJob2Completed ? '#86EFAC' : '#BAE6FD')}`, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                              <span style={{ fontSize: 10, padding: '2px 5px', borderRadius: 4, background: entry.secondJobStatus === 'in_progress' ? C.warningBadgeBg : (isJob2Completed ? C.successBadgeBg : `${C.line}22`), color: entry.secondJobStatus === 'in_progress' ? C.secondJobWagonText : (isJob2Completed ? C.good : C.line), border: `1px solid ${entry.secondJobStatus === 'in_progress' ? C.secondJobWagonBorder : (isJob2Completed ? C.successBadgeBorder : `${C.line}44`)}`, fontWeight: 600, whiteSpace: 'nowrap' }}>
                                 {entry.secondJobStatus === 'in_progress' ? '⏳ Devam' : (isJob2Completed ? '✓ Bitti' : 'İşlemde')}
                               </span>
                             )}
@@ -1530,29 +1734,29 @@ function App({ currentUser, onLogout }) {
 
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, marginBottom: 4 }}>
                             <div>
-                              <div style={{ fontSize: 9.5, color: '#78350F', marginBottom: 3, textAlign: 'center' }}>2. Başlama</div>
+                              <div style={{ fontSize: 9.5, color: C.secondJobSubText, marginBottom: 3, textAlign: 'center' }}>2. Başlama</div>
                               <input type="time" className="num-input num-input-sm" value={entry.secondJobStartTime || ''} placeholder={entry.actualEndTime || '12:50'} onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobStartTime', e.target.value)} />
                             </div>
                             <div>
-                              <div style={{ fontSize: 9.5, color: '#92400E', marginBottom: 3, textAlign: 'center', fontWeight: 600 }}>Teorik Bitiş</div>
-                              <div style={{ background: '#FFFFFF', border: '1px solid #FDE68A', borderRadius: 4, padding: '5px 2px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: j2Est?.mode === 'exceeds' || j2Est?.mode === 'carryover' ? C.bad : j2Est?.mode?.includes('weekend') ? C.weekend : j2Est?.mode === 'overtime' ? C.copper : C.good, fontWeight: 700 }}>
+                              <div style={{ fontSize: 9.5, color: C.secondJobHeader, marginBottom: 3, textAlign: 'center', fontWeight: 600 }}>Teorik Bitiş</div>
+                              <div style={{ background: C.warningBadgeBg, border: `1px solid ${C.warningBadgeBorder}`, borderRadius: 4, padding: '5px 2px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: j2Est?.mode === 'exceeds' || j2Est?.mode === 'carryover' ? C.bad : j2Est?.mode?.includes('weekend') ? C.weekend : j2Est?.mode === 'overtime' ? C.copper : C.good, fontWeight: 700 }}>
                                 {j2Est ? j2Est.label : '—'}
                               </div>
                             </div>
                             <div>
-                              <div style={{ fontSize: 9.5, color: '#78350F', marginBottom: 3, textAlign: 'center' }}>Gerçek Bitiş</div>
+                              <div style={{ fontSize: 9.5, color: C.secondJobSubText, marginBottom: 3, textAlign: 'center' }}>Gerçek Bitiş</div>
                               <input type="time" className="num-input num-input-sm" value={entry.secondJobActualEndTime || ''} placeholder="16:55" onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobActualEndTime', e.target.value)} />
                             </div>
                             <div>
-                              <div style={{ fontSize: 9.5, color: '#78350F', marginBottom: 3, textAlign: 'center' }}>Harcanan</div>
-                              <div style={{ background: '#FFFFFF', border: '1px solid #FDE68A', borderRadius: 4, padding: '5px 2px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#92400E', fontWeight: 700 }}>
+                              <div style={{ fontSize: 9.5, color: C.secondJobSubText, marginBottom: 3, textAlign: 'center' }}>Harcanan</div>
+                              <div style={{ background: C.wagonInputBg, border: `1px solid ${C.warningBadgeBorder}`, borderRadius: 4, padding: '5px 2px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: C.secondJobHeader, fontWeight: 700 }}>
                                 {entry.secondJobActual ? `${parseFloat(entry.secondJobActual).toFixed(1)} a-s` : '—'}
                               </div>
                             </div>
                           </div>
 
                           {entry.secondJobStatus === 'in_progress' && cDay?.job2Remainder > 0.05 && (
-                            <div style={{ fontSize: 11, color: '#92400E', fontFamily: "'JetBrains Mono', monospace", marginTop: 6, fontWeight: 600 }}>
+                            <div style={{ fontSize: 11, color: C.secondJobHeader, fontFamily: "'JetBrains Mono', monospace", marginTop: 6, fontWeight: 600 }}>
                               ↷ 2. İşten devredecek: {cDay.job2Remainder.toFixed(1)} a-s
                             </div>
                           )}
@@ -1560,42 +1764,42 @@ function App({ currentUser, onLogout }) {
                       )}
 
                       {/* Toplam Gerçekleşen Ozet */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, padding: '6px 10px', background: '#F0F9FF', border: '1px solid #BAE6FD', borderRadius: 6 }}>
-                        <span style={{ fontSize: 11, color: '#0369A1', fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>Günün Toplamı:</span>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: '#0369A1', fontFamily: "'JetBrains Mono', monospace" }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, padding: '6px 10px', background: C.totalBoxBg, border: `1px solid ${C.totalBoxBorder}`, borderRadius: 6 }}>
+                        <span style={{ fontSize: 11, color: C.totalBoxText, fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>Günün Toplamı:</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: C.paper, fontFamily: "'JetBrains Mono', monospace" }}>
                           {totalActual > 0 ? `${totalActual.toFixed(1)} a-s` : '—'}
                         </span>
                       </div>
 
                       {/* EK MESAİ & HAFTASONU BİLDİRİMLERİ */}
                       {isCardFullyFinishedOnTime ? (
-                        <div style={{ marginBottom: 8, padding: '6px 10px', background: '#DCFCE7', border: '1px solid #86EFAC', borderRadius: 6, fontSize: 11, color: '#15803D', display: 'flex', alignItems: 'center', gap: 6, fontWeight: 500 }}>
+                        <div style={{ marginBottom: 8, padding: '6px 10px', background: C.successBadgeBg, border: `1px solid ${C.successBadgeBorder}`, borderRadius: 6, fontSize: 11, color: C.good, display: 'flex', alignItems: 'center', gap: 6, fontWeight: 500 }}>
                           <span>✓</span> İş vardiya içinde (16:55) başarıyla tamamlandı.
                         </div>
                       ) : (
                         <>
                           {/* CUMA GÜNÜ MESAİ / HAFTASONU KARAR PANELİ */}
                           {dayIndex === 4 && (
-                            <div style={{ marginBottom: 10, background: '#EEF2FF', padding: 10, borderRadius: 6, border: '1px solid #C7D2FE' }}>
-                              <div style={{ fontSize: 11, color: '#4338CA', marginBottom: 6, fontWeight: 600 }}>
+                            <div style={{ marginBottom: 10, background: C.otFridayBg, padding: 10, borderRadius: 6, border: `1px solid ${C.otFridayBorder}` }}>
+                              <div style={{ fontSize: 11, color: C.otFridayText, marginBottom: 6, fontWeight: 600 }}>
                                 ⚠ {activeJobName} için Cuma Mesai / Haftasonu Planı:
                               </div>
                               <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                                 <button
                                   onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'friday_ot')}
-                                  style={{ flex: 1, minWidth: 95, fontSize: 10.5, fontWeight: 600, padding: '5px 4px', cursor: 'pointer', borderRadius: 4, background: entry.overtimeDecision === 'friday_ot' ? '#FEF3C7' : '#FFFFFF', border: `1px solid ${entry.overtimeDecision === 'friday_ot' ? C.copper : '#CBD5E1'}`, color: entry.overtimeDecision === 'friday_ot' ? '#92400E' : '#475569' }}
+                                  style={{ flex: 1, minWidth: 95, fontSize: 10.5, fontWeight: 600, padding: '5px 4px', cursor: 'pointer', borderRadius: 4, background: entry.overtimeDecision === 'friday_ot' ? C.copper : C.panel, border: `1px solid ${entry.overtimeDecision === 'friday_ot' ? C.copper : C.border}`, color: entry.overtimeDecision === 'friday_ot' ? (theme === 'light' ? '#FFFFFF' : '#0B0F17') : C.copper }}
                                 >
                                   Cuma Akşamı (17:25–20:00)
                                 </button>
                                 <button
                                   onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'sat_only')}
-                                  style={{ flex: 1, minWidth: 95, fontSize: 10.5, fontWeight: 600, padding: '5px 4px', cursor: 'pointer', borderRadius: 4, background: entry.overtimeDecision === 'sat_only' ? '#EEF2FF' : '#FFFFFF', border: `1px solid ${entry.overtimeDecision === 'sat_only' ? C.weekend : '#CBD5E1'}`, color: entry.overtimeDecision === 'sat_only' ? '#4338CA' : '#475569' }}
+                                  style={{ flex: 1, minWidth: 95, fontSize: 10.5, fontWeight: 600, padding: '5px 4px', cursor: 'pointer', borderRadius: 4, background: entry.overtimeDecision === 'sat_only' ? C.weekend : C.panel, border: `1px solid ${entry.overtimeDecision === 'sat_only' ? C.weekend : C.border}`, color: entry.overtimeDecision === 'sat_only' ? (theme === 'light' ? '#FFFFFF' : '#0B0F17') : C.weekend }}
                                 >
                                   Cumartesi (06:55–16:55)
                                 </button>
                                 <button
                                   onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'no')}
-                                  style={{ flex: 1, minWidth: 70, fontSize: 10.5, fontWeight: 600, padding: '5px 4px', cursor: 'pointer', borderRadius: 4, background: entry.overtimeDecision === 'no' ? '#FEE2E2' : '#FFFFFF', border: `1px solid ${entry.overtimeDecision === 'no' ? C.bad : '#CBD5E1'}`, color: entry.overtimeDecision === 'no' ? '#991B1B' : '#475569' }}
+                                  style={{ flex: 1, minWidth: 70, fontSize: 10.5, fontWeight: 600, padding: '5px 4px', cursor: 'pointer', borderRadius: 4, background: entry.overtimeDecision === 'no' ? C.bad : C.panel, border: `1px solid ${entry.overtimeDecision === 'no' ? C.bad : C.border}`, color: entry.overtimeDecision === 'no' ? (theme === 'light' ? '#FFFFFF' : '#0B0F17') : C.bad }}
                                 >
                                   Mesai Yok
                                 </button>
@@ -1605,20 +1809,20 @@ function App({ currentUser, onLogout }) {
 
                           {/* HAFTAİÇİ DİĞER GÜNLER MESAİ PANELİ */}
                           {dayIndex !== 4 && activeEst?.needsDecision && (
-                            <div style={{ marginBottom: 10, background: '#FFFBEB', padding: 10, borderRadius: 6, border: '1px solid #FDE68A' }}>
-                              <div style={{ fontSize: 11, color: '#92400E', marginBottom: 6, fontWeight: 600 }}>
+                            <div style={{ marginBottom: 10, background: C.otWeekdayBg, padding: 10, borderRadius: 6, border: `1px solid ${C.otWeekdayBorder}` }}>
+                              <div style={{ fontSize: 11, color: C.otWeekdayText, marginBottom: 6, fontWeight: 600 }}>
                                 ⚠ {activeJobName} normal mesaide (16:55) bitmiyor — mesai yapılacak mı?
                               </div>
                               <div style={{ display: 'flex', gap: 6 }}>
                                 <button
                                   onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'yes')}
-                                  style={{ flex: 1, fontSize: 11, fontWeight: 700, padding: '6px 0', cursor: 'pointer', borderRadius: 4, background: '#FEF3C7', border: '1px solid #FCD34D', color: '#92400E' }}
+                                  style={{ flex: 1, fontSize: 11, fontWeight: 700, padding: '6px 0', cursor: 'pointer', borderRadius: 4, background: C.warningBadgeBg, border: `1px solid ${C.warningBadgeBorder}`, color: C.copper }}
                                 >
                                   Mesai Yapılacak
                                 </button>
                                 <button
                                   onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'no')}
-                                  style={{ flex: 1, fontSize: 11, fontWeight: 700, padding: '6px 0', cursor: 'pointer', borderRadius: 4, background: '#FEE2E2', border: '1px solid #FECACA', color: '#991B1B' }}
+                                  style={{ flex: 1, fontSize: 11, fontWeight: 700, padding: '6px 0', cursor: 'pointer', borderRadius: 4, background: C.dangerBadgeBg, border: `1px solid ${C.dangerBadgeBorder}`, color: C.bad }}
                                 >
                                   Mesai Yapılmayacak
                                 </button>
@@ -1627,11 +1831,11 @@ function App({ currentUser, onLogout }) {
                           )}
 
                           {dayIndex !== 4 && (activeEst?.mode === 'overtime' || activeEst?.mode === 'exceeds' || activeEst?.mode === 'carryover') && !activeEst?.needsDecision && (
-                            <div style={{ marginBottom: 8, background: '#F8FAFC', padding: '7px 10px', borderRadius: 6, border: `1px solid ${C.border}` }}>
+                            <div style={{ marginBottom: 8, background: C.otOtherBg, padding: '7px 10px', borderRadius: 6, border: `1px solid ${C.border}` }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                                 <span style={{ fontSize: 10.5, color: C.dim, fontWeight: 500 }}>{activeJobName} Mesai Kararı:</span>
-                                <button onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'yes')} style={{ fontSize: 10.5, fontWeight: 600, padding: '3px 8px', cursor: 'pointer', borderRadius: 4, background: entry.overtimeDecision === 'yes' ? '#FEF3C7' : '#FFFFFF', border: `1px solid ${entry.overtimeDecision === 'yes' ? C.copper : C.border}`, color: entry.overtimeDecision === 'yes' ? '#92400E' : C.dim }}>Mesai Yapılacak</button>
-                                <button onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'no')} style={{ fontSize: 10.5, fontWeight: 600, padding: '3px 8px', cursor: 'pointer', borderRadius: 4, background: entry.overtimeDecision === 'no' ? '#FEE2E2' : '#FFFFFF', border: `1px solid ${entry.overtimeDecision === 'no' ? C.bad : C.border}`, color: entry.overtimeDecision === 'no' ? '#991B1B' : C.dim }}>Mesai Yapılmayacak</button>
+                                <button onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'yes')} style={{ fontSize: 10.5, fontWeight: 600, padding: '3px 8px', cursor: 'pointer', borderRadius: 4, background: entry.overtimeDecision === 'yes' ? C.copper : C.panel, border: `1px solid ${entry.overtimeDecision === 'yes' ? C.copper : C.border}`, color: entry.overtimeDecision === 'yes' ? (theme === 'light' ? '#FFFFFF' : '#0B0F17') : C.dim }}>Mesai Yapılacak</button>
+                                <button onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'no')} style={{ fontSize: 10.5, fontWeight: 600, padding: '3px 8px', cursor: 'pointer', borderRadius: 4, background: entry.overtimeDecision === 'no' ? C.bad : C.panel, border: `1px solid ${entry.overtimeDecision === 'no' ? C.bad : C.border}`, color: entry.overtimeDecision === 'no' ? (theme === 'light' ? '#FFFFFF' : '#0B0F17') : C.dim }}>Mesai Yapılmayacak</button>
                               </div>
                               {activeEst?.mode === 'overtime' && (
                                 <div style={{ fontSize: 10.5, color: C.copper, fontWeight: 500 }}>⚠ Mesai yapılacak — {activeJobName} normal mesaide bitmiyor (17:25–20:00 çalışma)</div>
@@ -1692,15 +1896,15 @@ function App({ currentUser, onLogout }) {
             <div style={{ fontSize: 12, fontWeight: 600, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
               Final Temizlik — Teslim Tahmini ({DAY_NAMES[dayIndex]} {selectedDate.getDate()} {MONTHS[selectedDate.getMonth()]})
             </div>
-            <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 18, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+            <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 18, boxShadow: C.cardShadow }}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 14 }}>
                 {finalCascade.map((c, i) => (
                   <React.Fragment key={i}>
-                    <div style={{ minWidth: 120, flex: 1, background: '#F8FAFC', padding: 10, borderRadius: 6, border: '1px solid #E2E8F0' }}>
+                    <div style={{ minWidth: 120, flex: 1, background: C.cascadeBoxBg, padding: 10, borderRadius: 6, border: `1px solid ${C.cascadeBoxBorder}` }}>
                       <div style={{ fontSize: 11, color: C.dim, marginBottom: 3, display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
                         <span style={{ fontWeight: 600 }}>{c ? c.station.name.replace('Final Temizlik - ', '') : FINAL_STAGES[i].replace('Final Temizlik - ', '')}</span>
                         {c?.wagonNo && (
-                          <span style={{ color: '#0369A1', background: '#E0F2FE', border: '1px solid #BAE6FD', padding: '1px 5px', borderRadius: 3, fontWeight: 700, fontSize: 10 }}>
+                          <span style={{ color: C.line, background: C.totalBoxBg, border: `1px solid ${C.totalBoxBorder}`, padding: '1px 5px', borderRadius: 3, fontWeight: 700, fontSize: 10 }}>
                             #{c.wagonNo}
                           </span>
                         )}
@@ -1709,7 +1913,7 @@ function App({ currentUser, onLogout }) {
                         {c ? minToTime(c.startMin) : '—'} → <span style={{ color: c?.mode === 'exceeds' || c?.mode === 'carryover' ? C.bad : c?.mode?.includes('weekend') ? C.weekend : c?.mode === 'overtime' || c?.mode === 'pending' || c?.mode === 'pending_friday' ? C.copper : C.good, fontWeight: 700 }}>{c ? c.label : '—'}</span>
                       </div>
                     </div>
-                    {i < FINAL_STAGES.length - 1 && <div style={{ display: 'flex', alignItems: 'center', color: '#94A3B8', fontSize: 16 }}>→</div>}
+                    {i < FINAL_STAGES.length - 1 && <div style={{ display: 'flex', alignItems: 'center', color: C.cascadeArrow, fontSize: 16 }}>→</div>}
                   </React.Fragment>
                 ))}
               </div>
@@ -1729,9 +1933,9 @@ function App({ currentUser, onLogout }) {
                 {(() => {
                   const activeWagon = finalCascade.find(c => c?.wagonNo)?.wagonNo;
                   return activeWagon ? (
-                    <div style={{ background: '#F0F9FF', border: '1px solid #BAE6FD', color: '#0067C0', padding: '5px 12px', borderRadius: 6, fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ background: C.totalBoxBg, border: `1px solid ${C.totalBoxBorder}`, color: C.line, padding: '5px 12px', borderRadius: 6, fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span>🚆 Teslimattaki Vagon:</span>
-                      <span style={{ color: '#0369A1' }}>#{activeWagon}</span>
+                      <span style={{ color: C.paper }}>#{activeWagon}</span>
                     </div>
                   ) : null;
                 })()}
@@ -1742,29 +1946,29 @@ function App({ currentUser, onLogout }) {
 
         {/* Grup Toplamlari */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginBottom: 20 }}>
-          <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+          <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 18px', boxShadow: C.cardShadow }}>
             <GroupTag group="taslama" />
             <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 700, color: C.groupA, marginTop: 6 }}>
               {groupTotals.taslama.actual.toFixed(1)} <span style={{ fontSize: 12, color: C.dim }}>a-s</span>
             </div>
             <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>Taşlama toplam gerçekleşen</div>
           </div>
-          <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
+          <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 18px', boxShadow: C.cardShadow }}>
             <GroupTag group="kaynakmontaj" />
             <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 700, color: C.groupB, marginTop: 6 }}>
               {groupTotals.kaynakmontaj.actual.toFixed(1)} <span style={{ fontSize: 12, color: C.dim }}>a-s</span>
             </div>
             <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>Kaynak-Montaj toplam gerçekleşen</div>
           </div>
-          <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
-            <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: C.bad, border: `1px solid #FECACA`, background: '#FEE2E2', borderRadius: 4, padding: '2px 6px', textTransform: 'uppercase', fontWeight: 600 }}>Devamsızlık</span>
+          <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 18px', boxShadow: C.cardShadow }}>
+            <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: C.bad, border: `1px solid ${C.dangerBadgeBorder}`, background: C.dangerBadgeBg, borderRadius: 4, padding: '2px 6px', textTransform: 'uppercase', fontWeight: 600 }}>Devamsızlık</span>
             <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 700, color: C.bad, marginTop: 6 }}>
               {absenteeismTotal.persons} <span style={{ fontSize: 12, color: C.dim }}>kişi-gün</span>
             </div>
             <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>{absenteeismTotal.hours.toFixed(1)} adam-saat kayıp</div>
           </div>
-          <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.03)' }}>
-            <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: C.copper, border: `1px solid #FDE68A`, background: '#FEF3C7', borderRadius: 4, padding: '2px 6px', textTransform: 'uppercase', fontWeight: 600 }}>Verim Kaybı</span>
+          <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 18px', boxShadow: C.cardShadow }}>
+            <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: C.copper, border: `1px solid ${C.warningBadgeBorder}`, background: C.warningBadgeBg, borderRadius: 4, padding: '2px 6px', textTransform: 'uppercase', fontWeight: 600 }}>Verim Kaybı</span>
             <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 22, fontWeight: 700, color: C.copper, marginTop: 6 }}>
               {lossTotal.toFixed(1)} <span style={{ fontSize: 12, color: C.dim }}>a-s</span>
             </div>
@@ -1778,16 +1982,16 @@ function App({ currentUser, onLogout }) {
             Ek Mesai Gerekebilecek İstasyonlar
           </div>
           {overtimeStations.length === 0 ? (
-            <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 8, padding: 12, fontSize: 13, color: '#15803D', fontWeight: 500 }}>
+            <div style={{ background: C.successBadgeBg, border: `1px solid ${C.successBadgeBorder}`, borderRadius: 8, padding: 12, fontSize: 13, color: C.good, fontWeight: 500 }}>
               ✓ Bu hafta ek mesai gereken istasyon görünmüyor.
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {overtimeStations.map((s) => (
-                <div key={s.id} style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                <div key={s.id} style={{ background: C.dangerBadgeBg, border: `1px solid ${C.dangerBadgeBorder}`, borderRadius: 8, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <GroupTag group={s.group} />
-                    <span style={{ fontWeight: 600, color: '#0F172A' }}>{s.name}</span>
+                    <span style={{ fontWeight: 600, color: C.paper }}>{s.name}</span>
                   </div>
                   <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: C.bad, fontWeight: 600 }}>
                     ≈{s.totalCapacityShortfall.toFixed(1)} a-s kapasite açığı{s.avgPresent > 0 ? ` · ≈${(s.totalCapacityShortfall / s.avgPresent).toFixed(1)} saat/kişi` : ''}
@@ -1802,13 +2006,13 @@ function App({ currentUser, onLogout }) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.5 }}>Haftalık Özet — İstasyon Bazlı</span>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={printReport} style={{ background: '#FFFFFF', border: `1px solid ${C.border}`, borderRadius: 6, color: C.paper, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontWeight: 600, boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>Yazdır / PDF</button>
-            <button onClick={exportCSV} style={{ background: '#FFFFFF', border: `1px solid ${C.border}`, borderRadius: 6, color: C.paper, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontWeight: 600, boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>CSV İndir</button>
+            <button onClick={printReport} style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 6, color: C.paper, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontWeight: 600, boxShadow: C.cardShadow }}>Yazdır / PDF</button>
+            <button onClick={exportCSV} style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 6, color: C.paper, padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontWeight: 600, boxShadow: C.cardShadow }}>CSV İndir</button>
           </div>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 10 }}>
           {stationSummaries.map((s, i) => (
-            <div key={s.id} style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px 14px', boxShadow: '0 1px 3px rgba(0,0,0,0.03)', opacity: s.active === false ? 0.6 : 1 }}>
+            <div key={s.id} style={{ background: C.summaryCardBg, border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px 14px', boxShadow: C.cardShadow, opacity: s.active === false ? 0.6 : 1 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
                   <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: C.dim }}>{String(i + 1).padStart(2, '0')}</span>
@@ -1816,7 +2020,7 @@ function App({ currentUser, onLogout }) {
                     {s.name} {s.active === false && <span style={{ fontSize: 11, color: C.bad }}>(Pasif)</span>}
                   </span>
                 </div>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 15, fontWeight: 700, color: effColor(s.avg) }}>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 15, fontWeight: 700, color: effColor(s.avg, C) }}>
                   {s.avg === null ? (s.idleDays > 0 ? 'Boşta' : '—') : `${Math.round(s.avg)}%`}
                 </span>
               </div>
@@ -1831,7 +2035,7 @@ function App({ currentUser, onLogout }) {
                     const last = w.jobs[w.jobs.length - 1];
                     const isDone = last.status === 'Tamamlandı';
                     return (
-                      <span key={w.name} title={`${last.day} - ${last.job}: ${last.status}`} style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", padding: '2px 6px', borderRadius: 4, background: isDone ? '#DCFCE7' : '#FEF3C7', color: isDone ? '#15803D' : '#92400E', border: `1px solid ${isDone ? '#86EFAC' : '#FCD34D'}`, fontWeight: 600 }}>
+                      <span key={w.name} title={`${last.day} - ${last.job}: ${last.status}`} style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", padding: '2px 6px', borderRadius: 4, background: isDone ? C.successBadgeBg : C.warningBadgeBg, color: isDone ? C.good : C.copper, border: `1px solid ${isDone ? C.successBadgeBorder : C.warningBadgeBorder}`, fontWeight: 600 }}>
                         🚆 #{w.name}: {isDone ? '✓' : '⏳'}
                       </span>
                     );
@@ -1853,6 +2057,25 @@ function App({ currentUser, onLogout }) {
 function Root() {
   const [authState, setAuthState] = useState('loading');
   const [currentUser, setCurrentUser] = useState(null);
+  const [themeMode, setThemeMode] = useState(() => {
+    return localStorage.getItem('est_app_theme') || 'light';
+  });
+
+  const toggleTheme = () => {
+    setThemeMode((prev) => {
+      const next = prev === 'light' ? 'dark' : 'light';
+      localStorage.setItem('est_app_theme', next);
+      return next;
+    });
+  };
+
+  const C = THEMES[themeMode] || THEMES.light;
+
+  useEffect(() => {
+    document.body.setAttribute('data-theme', themeMode);
+    document.body.style.backgroundColor = C.page;
+    document.body.style.color = C.paper;
+  }, [themeMode, C.page, C.paper]);
 
   useEffect(() => {
     const unsub = auth.onAuthStateChanged((user) => {
@@ -1862,17 +2085,29 @@ function Root() {
     return unsub;
   }, []);
 
+  const contextValue = useMemo(() => ({
+    theme: themeMode,
+    toggleTheme,
+    C
+  }), [themeMode, C]);
+
   if (authState === 'loading') {
     return (
-      <div style={{ minHeight: '100vh', background: '#F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748B', fontFamily: "'Segoe UI', sans-serif" }}>
+      <div style={{ minHeight: '100vh', background: C.page, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.dim, fontFamily: "'Segoe UI', sans-serif" }}>
         Yükleniyor…
       </div>
     );
   }
-  if (authState === 'signed-out') {
-    return <LoginScreen />;
-  }
-  return <App currentUser={currentUser} onLogout={() => auth.signOut()} />;
+
+  return (
+    <ThemeContext.Provider value={contextValue}>
+      {authState === 'signed-out' ? (
+        <LoginScreen />
+      ) : (
+        <App currentUser={currentUser} onLogout={() => auth.signOut()} />
+      )}
+    </ThemeContext.Provider>
+  );
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(<Root />);
