@@ -31,7 +31,7 @@
   }
   .num-input:focus { outline: none; border-color: #00E5FF; box-shadow: 0 0 10px rgba(0,229,255,0.35); }
   .num-input::placeholder { color: #3F5A6D; }
-  .num-input-sm { padding: 5px 6px; font-size: 12px; }
+  .num-input-sm { padding: 6px 6px; font-size: 12px; }
   input[type=number]::-webkit-inner-spin-button,
   input[type=number]::-webkit-outer-spin-button { opacity: 0.5; }
   .idle-card {
@@ -430,7 +430,7 @@ function App({ currentUser, onLogout }) {
   }
 
   function removeStation(id) {
-    if (!confirm('Bu istasyonu tamamen silmek istediğinizden emin misiniz? (Geçici olarak kullanmayacaksanız pasife almanız önerilir)')) return;
+    if (!confirm('Bu istasyonu tamamen silmek istediğinizden emin misiniz?')) return;
     setData((prev) => {
       const entries = { ...prev.entries };
       Object.keys(entries).forEach((k) => { if (k.endsWith('|' + id)) delete entries[k]; });
@@ -447,7 +447,6 @@ function App({ currentUser, onLogout }) {
     scheduleWrite('stations', id, { [field]: value });
   }
 
-  // 1. İş veya 2. İş saatleri değiştiğinde adam-saatleri otomatik hesapla
   function updateEntry(dKey, stationId, field, value) {
     const key = `${dKey}|${stationId}`;
     const current = data.entries[key] || {};
@@ -458,7 +457,7 @@ function App({ currentUser, onLogout }) {
     const absentStaff = parseFloat(merged.absentStaff) || 0;
     const present = Math.max(totalStaff - absentStaff, 0);
 
-    // 1. İş gerçekleşen a-s hesabı
+    // 1. İş adam-saati
     if (merged.actualEndTime && !merged.isIdle) {
       const startMin = timeToMin(merged.startTime) ?? SHIFT_START_MIN;
       const endMin = timeToMin(merged.actualEndTime);
@@ -470,7 +469,7 @@ function App({ currentUser, onLogout }) {
       patch.actual = '';
     }
 
-    // 2. İş (Yeni Başlatılan İş) gerçekleşen a-s hesabı
+    // 2. İş adam-saati
     if (merged.hasSecondJob && merged.secondJobActualEndTime && !merged.isIdle) {
       const startMin2 = timeToMin(merged.secondJobStartTime) ?? (timeToMin(merged.actualEndTime) || SHIFT_START_MIN);
       const endMin2 = timeToMin(merged.secondJobActualEndTime);
@@ -534,8 +533,6 @@ function App({ currentUser, onLogout }) {
     return data.stations.some((s) => hasAnyInput(data.entries[`${k}|${s.id}`]));
   }
 
-  // Akıllı Çoklu İş (Devreden + Yeni İş) Takip Motoru:
-  // 1. İş dünden kalanı bitirir, 2. İş ise günün kalanında yeni başlayan işin adam-saatini ve yarına devrini hesaplar.
   const carryoverMap = useMemo(() => {
     const map = {};
     data.stations.forEach((s) => {
@@ -549,17 +546,14 @@ function App({ currentUser, onLogout }) {
         }
 
         const isCarryover = carry != null;
-        // 1. İşin Standardı: Dünden kalan varsa o, yoksa istasyonun temel standardı
         const job1Standard = carry != null ? carry : s.standardHours;
         const job1Actual = parseFloat(e?.actual) || 0;
         
-        // 1. İşten kalan (varsa)
         let job1Remainder = 0;
         if (job1Standard != null) {
           job1Remainder = Math.max(job1Standard - job1Actual, 0);
         }
 
-        // 2. İş (Günün kalanında yeni başlatılan iş)
         const hasJob2 = !!e?.hasSecondJob;
         const job2Standard = hasJob2 ? (parseFloat(e?.secondJobStandard) || s.standardHours || 0) : 0;
         const job2Actual = hasJob2 ? (parseFloat(e?.secondJobActual) || 0) : 0;
@@ -569,7 +563,6 @@ function App({ currentUser, onLogout }) {
           job2Remainder = Math.max(job2Standard - job2Actual, 0);
         }
 
-        // Yarına devredecek saat: 2. iş varsa onun kalanı, yoksa 1. işin kalanı
         const nextCarry = hasJob2 ? (job2Remainder > 0.05 ? job2Remainder : null) : (job1Remainder > 0.05 ? job1Remainder : null);
         carry = nextCarry;
 
@@ -1009,14 +1002,14 @@ function App({ currentUser, onLogout }) {
                         )}
                       </div>
 
-                      {/* 1. İŞ (DÜNDEN DEVREDEN VEYA GÜNÜN İLK İŞİ) */}
+                      {/* 1. İŞ (DÜNDEN DEVREDEN VEYA İLK İŞ) */}
                       <div style={{ background: C.page, border: `1px solid ${C.border}`, borderRadius: 3, padding: '10px 10px', marginBottom: 10 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                          <span style={{ fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace", color: cDay?.isCarryover ? C.copper : C.line, fontWeight: 600 }}>
-                            {cDay?.isCarryover ? `↷ 1. İş: Dünden Kalan (${cDay.job1Standard.toFixed(1)} a-s)` : `1. İş: Standart (${s.standardHours != null ? `${s.standardHours} a-s` : '—'})`}
+                          <span style={{ fontSize: 12, fontFamily: "'JetBrains Mono', monospace", color: cDay?.isCarryover ? C.copper : C.line, fontWeight: 700 }}>
+                            {cDay?.isCarryover ? `↷ 1. İŞ: DÜNDEN KALAN (${cDay.job1Standard.toFixed(1)} a-s)` : `1. İŞ: STANDART (${s.standardHours != null ? `${s.standardHours} a-s` : '—'})`}
                           </span>
                           {cDay?.job1Completed != null && (
-                            <span style={{ fontSize: 10.5, fontFamily: "'JetBrains Mono', monospace", color: cDay.job1Completed >= 100 ? C.good : C.copper }}>
+                            <span style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: cDay.job1Completed >= 100 ? C.good : C.copper, fontWeight: 600 }}>
                               %{Math.round(cDay.job1Completed)} bitti
                             </span>
                           )}
@@ -1033,7 +1026,7 @@ function App({ currentUser, onLogout }) {
                           </div>
                           <div>
                             <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>Harcanan</div>
-                            <div style={{ background: 'rgba(3,8,14,0.9)', border: `1px solid ${C.border}`, borderRadius: 3, padding: '5px 4px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: C.paper, fontWeight: 700 }}>
+                            <div style={{ background: 'rgba(3,8,14,0.9)', border: `1px solid ${C.border}`, borderRadius: 3, padding: '6px 4px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: C.paper, fontWeight: 700 }}>
                               {entry.actual ? `${parseFloat(entry.actual).toFixed(1)} a-s` : '—'}
                             </div>
                           </div>
@@ -1046,70 +1039,98 @@ function App({ currentUser, onLogout }) {
                         )}
                       </div>
 
-                      {/* 2. İŞ (DEVREDEN BİTTİKTEN SONRA YENİ ALINAN İŞ) */}
-                      <div style={{ background: entry.hasSecondJob ? C.page : 'transparent', border: `1px dashed ${entry.hasSecondJob ? C.border : C.border + '66'}`, borderRadius: 3, padding: '8px 10px', marginBottom: 10 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: 11, color: entry.hasSecondJob ? C.good : C.dim, fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
-                            {entry.hasSecondJob ? '2. İş: Gün İçi Yeni İş' : 'Günün kalanında yeni iş alındı mı?'}
-                          </span>
-                          <button
-                            onClick={() => toggleSecondJob(selectedKey, s.id, entry.actualEndTime, s.standardHours)}
-                            style={{
-                              background: entry.hasSecondJob ? C.bad + '22' : C.good + '22',
-                              border: `1px solid ${entry.hasSecondJob ? C.bad : C.good}`,
-                              color: entry.hasSecondJob ? C.bad : C.good,
-                              fontSize: 10.5,
-                              padding: '2px 8px',
-                              cursor: 'pointer',
-                              borderRadius: 2,
-                              fontWeight: 600
-                            }}
-                          >
-                            {entry.hasSecondJob ? '× 2. İşi Kaldır' : '+ 2. Yeni İşi Başlat'}
-                          </button>
-                        </div>
-
-                        {entry.hasSecondJob && (
-                          <div style={{ marginTop: 8 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                              <span style={{ fontSize: 10, color: C.dim }}>Yeni İş Standart:</span>
-                              <input
-                                type="number" min="0" step="0.5" placeholder="a-s"
-                                className="num-input num-input-sm" style={{ width: 65, padding: '2px 4px' }}
-                                value={entry.secondJobStandard || ''}
-                                onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobStandard', e.target.value)}
-                              />
-                              <span style={{ fontSize: 10, color: C.dim }}>a-s</span>
-                            </div>
-
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 4 }}>
-                              <div>
-                                <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>2. İş Başlama</div>
-                                <input type="time" className="num-input num-input-sm" value={entry.secondJobStartTime || ''} placeholder={entry.actualEndTime || '12:50'} onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobStartTime', e.target.value)} />
-                              </div>
-                              <div>
-                                <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>2. İş Bitiş</div>
-                                <input type="time" className="num-input num-input-sm" value={entry.secondJobActualEndTime || ''} placeholder="16:55" onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobActualEndTime', e.target.value)} />
-                              </div>
-                              <div>
-                                <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>2. İş Harcanan</div>
-                                <div style={{ background: 'rgba(3,8,14,0.9)', border: `1px solid ${C.border}`, borderRadius: 3, padding: '5px 4px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: C.good, fontWeight: 700 }}>
-                                  {entry.secondJobActual ? `${parseFloat(entry.secondJobActual).toFixed(1)} a-s` : '—'}
-                                </div>
-                              </div>
-                            </div>
-
-                            {cDay?.job2Remainder > 0.05 && (
-                              <div style={{ fontSize: 10.5, color: C.copper, fontFamily: "'JetBrains Mono', monospace", marginTop: 4 }}>
-                                ↷ 2. İşten yarına devredecek: {cDay.job2Remainder.toFixed(1)} a-s
-                              </div>
-                            )}
+                      {/* 2. İŞ BAŞLATMA BUTONU / ALANI */}
+                      {!entry.hasSecondJob ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleSecondJob(selectedKey, s.id, entry.actualEndTime, s.standardHours)}
+                          style={{
+                            width: '100%',
+                            background: 'rgba(57, 255, 158, 0.10)',
+                            border: '1px dashed #39FF9E',
+                            color: '#39FF9E',
+                            padding: '10px 8px',
+                            borderRadius: 4,
+                            cursor: 'pointer',
+                            fontFamily: "'Rajdhani', sans-serif",
+                            fontWeight: 700,
+                            fontSize: 13,
+                            letterSpacing: 0.5,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 8,
+                            marginBottom: 10,
+                            boxShadow: '0 0 12px rgba(57, 255, 158, 0.12)',
+                            transition: 'all 0.2s ease'
+                          }}
+                        >
+                          <span style={{ fontSize: 15 }}>➕</span>
+                          GÜN İÇİNDE 2. YENİ İŞİ BAŞLAT
+                        </button>
+                      ) : (
+                        /* 2. İŞ AÇILDIĞINDA GÖRÜNEN DETAY KUTUSU */
+                        <div style={{ background: 'rgba(8, 15, 24, 0.95)', border: '1px solid #FFA640', borderRadius: 4, padding: '10px', marginBottom: 10, boxShadow: '0 0 16px rgba(255, 166, 64, 0.15)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, borderBottom: '1px solid rgba(255, 166, 64, 0.3)', paddingBottom: 6 }}>
+                            <span style={{ fontSize: 12, color: '#FFA640', fontFamily: "'Rajdhani', sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>
+                              ⚡ 2. İŞ (GÜN İÇİNDE BAŞLAYAN YENİ İŞ)
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => toggleSecondJob(selectedKey, s.id, entry.actualEndTime, s.standardHours)}
+                              style={{
+                                background: 'rgba(255, 84, 104, 0.2)',
+                                border: '1px solid #FF5468',
+                                color: '#FF5468',
+                                fontSize: 11,
+                                padding: '2px 8px',
+                                cursor: 'pointer',
+                                borderRadius: 2,
+                                fontWeight: 600
+                              }}
+                            >
+                              ✕ İptal Et / Kaldır
+                            </button>
                           </div>
-                        )}
-                      </div>
 
-                      {/* Gunluk Toplam Ozet & Tahmin */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, padding: '4px 8px', background: 'rgba(0,229,255,0.05)', border: `1px solid ${C.border}33`, borderRadius: 3 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                            <span style={{ fontSize: 11, color: C.dim }}>Yeni İşin Standart Süresi:</span>
+                            <input
+                              type="number" min="0" step="0.5" placeholder="a-s"
+                              className="num-input num-input-sm" style={{ width: 75, padding: '3px 6px' }}
+                              value={entry.secondJobStandard || ''}
+                              onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobStandard', e.target.value)}
+                            />
+                            <span style={{ fontSize: 11, color: C.dim }}>adam-saat</span>
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 4 }}>
+                            <div>
+                              <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>2. İş Başlama</div>
+                              <input type="time" className="num-input num-input-sm" value={entry.secondJobStartTime || ''} placeholder={entry.actualEndTime || '12:50'} onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobStartTime', e.target.value)} />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>2. İş Bitiş</div>
+                              <input type="time" className="num-input num-input-sm" value={entry.secondJobActualEndTime || ''} placeholder="16:55" onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobActualEndTime', e.target.value)} />
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>2. İş Harcanan</div>
+                              <div style={{ background: 'rgba(3,8,14,0.9)', border: '1px solid #FFA640', borderRadius: 3, padding: '6px 4px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#FFA640', fontWeight: 700 }}>
+                                {entry.secondJobActual ? `${parseFloat(entry.secondJobActual).toFixed(1)} a-s` : '—'}
+                              </div>
+                            </div>
+                          </div>
+
+                          {cDay?.job2Remainder > 0.05 && (
+                            <div style={{ fontSize: 11, color: C.copper, fontFamily: "'JetBrains Mono', monospace", marginTop: 6, fontWeight: 600 }}>
+                              ↷ 2. İşten yarına devredecek: {cDay.job2Remainder.toFixed(1)} a-s
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Gunluk Toplam Ozet & Verim Barı */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, padding: '6px 10px', background: 'rgba(0,229,255,0.06)', border: `1px solid ${C.border}44`, borderRadius: 3 }}>
                         <span style={{ fontSize: 11, color: C.line, fontFamily: "'JetBrains Mono', monospace" }}>Günün Toplam Gerçekleşeni:</span>
                         <span style={{ fontSize: 13, fontWeight: 700, color: C.paper, fontFamily: "'JetBrains Mono', monospace" }}>
                           {totalActual > 0 ? `${totalActual.toFixed(1)} a-s` : '—'}
@@ -1223,7 +1244,7 @@ function App({ currentUser, onLogout }) {
               {groupTotals.taslama.actual.toFixed(1)} <span style={{ fontSize: 13, color: C.dim, fontWeight: 500 }}>a-s</span>
             </div>
             <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>
-              {groupTotals.taslama.standard > 0 ? `Standart: ${groupTotals.taslama.standard.toFixed(1)} a-s` : 'Taşlama istasyonları toplamı'}
+              {groupTotals.taslama.standard > 0 ? `Standart: ${groupTotals.taslama.standard.toFixed(1)} a-s (İlk Temizlik + Sıfırlama + Final Temizlik)` : 'Taşlama istasyonları toplamı'}
             </div>
           </div>
           <div style={{ background: C.panel, border: `1px solid ${C.groupB}55`, boxShadow: `0 0 20px ${C.groupB}22`, padding: '14px 16px' }}>
