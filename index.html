@@ -151,19 +151,16 @@ function estimateFinishTime(startMin, workMinutesNeeded, blocks) {
   return { finishMin: lastBlockEnd + remaining, overflow: true };
 }
 
-// Cuma ve Haftasonunu (Cmt / Paz: 06:55–16:55) hesaplayan gelişmiş tahmin motoru
 function estimateWithDecision(startMin, workMinutesNeeded, decision, dayIdx = 0) {
   const normal = estimateFinishTime(startMin, workMinutesNeeded, SHIFT_BLOCKS);
   if (!normal.overflow) return { finishMin: normal.finishMin, mode: 'normal', needsDecision: false, label: minToTime(normal.finishMin) };
   
-  // CUMA GÜNÜ ÖZEL DEĞERLENDİRMESİ
   if (dayIdx === 4) {
     if (decision === 'yes' || decision === 'friday_ot') {
       const withOT = estimateFinishTime(startMin, workMinutesNeeded, ALL_BLOCKS);
       if (!withOT.overflow) {
         return { finishMin: withOT.finishMin, mode: 'overtime', needsDecision: false, label: `${minToTime(withOT.finishMin)} (Cuma Mesai)` };
       }
-      // Cuma akşamına da sığmıyor -> Cumartesi Mesaisi ile devam eder
       const remSat = withOT.finishMin - OT_END_MIN;
       const satEst = estimateFinishTime(SHIFT_START_MIN, remSat, SHIFT_BLOCKS);
       if (!satEst.overflow) {
@@ -174,7 +171,6 @@ function estimateWithDecision(startMin, workMinutesNeeded, decision, dayIdx = 0)
       return { finishMin: sunEst.finishMin, mode: 'weekend_sun', needsDecision: false, label: `↷ Paz ${minToTime(sunEst.finishMin)}` };
     }
     if (decision === 'sat_only') {
-      // Cuma akşam mesaisi yapılmaz, doğrudan Cumartesi 06:55–16:55 mesaisi yapılır
       const fridayWorkDone = workMinutesBetween(startMin, SHIFT_END_MIN, SHIFT_BLOCKS);
       const remSat = workMinutesNeeded - fridayWorkDone;
       const satEst = estimateFinishTime(SHIFT_START_MIN, remSat, SHIFT_BLOCKS);
@@ -188,10 +184,9 @@ function estimateWithDecision(startMin, workMinutesNeeded, decision, dayIdx = 0)
     if (decision === 'no') {
       return { finishMin: normal.finishMin, mode: 'carryover', needsDecision: false, label: '↷ Pzt Devir' };
     }
-    return { finishMin: normal.finishMin, mode: 'pending_friday', needsDecision: true, label: '? Cuma/Haftasonu Kararı' };
+    return { finishMin: normal.finishMin, mode: 'pending_friday', needsDecision: true, label: '? Karar Bekliyor' };
   }
 
-  // HAFTAİÇİ DİĞER GÜNLER
   if (decision === 'yes') {
     const withOT = estimateFinishTime(startMin, workMinutesNeeded, ALL_BLOCKS);
     if (!withOT.overflow) return { finishMin: withOT.finishMin, mode: 'overtime', needsDecision: false, label: minToTime(withOT.finishMin) };
@@ -604,7 +599,6 @@ function App({ currentUser, onLogout }) {
     return data.stations.some((s) => hasAnyInput(data.entries[`${k}|${s.id}`]));
   }
 
-  // Cuma'dan Haftasonuna Devreden ve Akıllı İş Takip Motoru
   const carryoverMap = useMemo(() => {
     const map = {};
     data.stations.forEach((s) => {
@@ -806,7 +800,7 @@ function App({ currentUser, onLogout }) {
         <td style="text-align:right">${s.totalAbsent > 0 ? s.totalAbsent + ' kişi / ' + s.totalLost.toFixed(1) + ' a-s' : '—'}</td>
         <td style="text-align:right;font-weight:700">${s.avg === null ? (s.idleDays > 0 ? '<span style="color:#64748B">Planlı Boşta</span>' : '—') : Math.round(s.avg) + '%'}</td>
       </tr>`).join('');
-    const overtimeRows = overtimeStations.map((s) => `<li>${s.name}: ≈${s.totalCapacityShortfall.toFixed(1)} adam-saat kapasite açığı${s.avgPresent > 0 ? ` · ≈${(s.totalCapacityShortfall / s.avgPresent).toFixed(1)} saat/kişi` : ''}</li>`).join('');
+    const overtimeRows = overtimeStations.map((s) => `<li>${s.name}: ≈${s.totalCapacityShortfall.toFixed(1)} adam-saat kapasite açığı${s.avgPresent > 0 ? ` · ≈${(s.totalCapacityShortfall / s.avgPresent).toFixed(1)} saat/kişi ek mesai` : ''}</li>`).join('');
     const allowanceBreaches = stationSummaries.filter((s) => s.lossPercentAvg != null && s.lossPercentAvg > allowancePercent);
     const allowanceRows = allowanceBreaches.map((s) => `<li>${s.name}: kayıp oranı %${s.lossPercentAvg.toFixed(0)} (izin verilen %${allowancePercent})</li>`).join('');
     
@@ -1127,7 +1121,7 @@ function App({ currentUser, onLogout }) {
               const lossPercent = (lossHours != null && totalStandard > 0) ? (lossHours / totalStandard) * 100 : null;
               const showStatus = hasAnyInput(entry) && !isIdle;
 
-              // 1. İş Teorik Bitiş Saati (Cuma ve Haftasonu akıllı hesaplamalı)
+              // 1. İş Teorik Bitiş Saati
               const j1StartMin = timeToMin(entry.startTime) ?? SHIFT_START_MIN;
               const j1Standard = cDay ? cDay.job1Standard : s.standardHours;
               const j1NeededMin = stageRequiredMinutes(j1Standard, presentStaff, allowancePercent);
@@ -1142,11 +1136,21 @@ function App({ currentUser, onLogout }) {
                 j2Est = j2NeededMin != null ? estimateWithDecision(j2StartMin, j2NeededMin, entry.overtimeDecision, dayIndex) : null;
               }
 
+              // 1. İş Bitti mi?
               const actualEndMin = timeToMin(entry.actualEndTime);
-              const isJob1Finished = (entry.job1Status !== 'in_progress');
-              const isFinishedWithinShift = isJob1Finished && (actualEndMin != null && actualEndMin <= SHIFT_END_MIN);
+              const isJob1Completed = (entry.job1Status !== 'in_progress') && (actualEndMin != null);
+              const isJob1FinishedWithinShift = isJob1Completed && (actualEndMin <= SHIFT_END_MIN);
 
-              const activeEst = entry.hasSecondJob ? (j2Est || j1Est) : j1Est;
+              // 2. İş Bitti mi?
+              const hasJob2 = !!entry.hasSecondJob;
+              const secondActualEndMin = timeToMin(entry.secondJobActualEndTime);
+              const isJob2Completed = hasJob2 && (entry.secondJobStatus !== 'in_progress') && (secondActualEndMin != null);
+              const isJob2FinishedWithinShift = isJob2Completed && (secondActualEndMin <= SHIFT_END_MIN);
+
+              // Aktif iş ve kartın tamamlanma durumu
+              const isCardFullyFinishedOnTime = hasJob2 ? isJob2FinishedWithinShift : isJob1FinishedWithinShift;
+              const activeEst = hasJob2 ? (isJob2Completed ? null : j2Est) : (isJob1Completed ? null : j1Est);
+              const activeJobName = hasJob2 ? '2. İş' : '1. İş';
 
               return (
                 <div key={s.id} className={isIdle ? 'idle-card' : ''} style={{ background: C.panelAlt, border: `1px solid ${isWeekendDay ? C.weekend + '33' : C.border}`, borderRadius: 6, padding: 14 }}>
@@ -1403,8 +1407,8 @@ function App({ currentUser, onLogout }) {
                         </span>
                       </div>
 
-                      {/* EK MESAİ & HAFTASONU BİLDİRİMLERİ */}
-                      {isFinishedWithinShift ? (
+                      {/* EK MESAİ & HAFTASONU BİLDİRİMLERİ (DÜZELTİLDİ: 2. İŞ BAŞLADIĞINDA DA DAİMA ÇALIŞIR) */}
+                      {isCardFullyFinishedOnTime ? (
                         <div style={{ marginBottom: 8, padding: '5px 8px', background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.3)', borderRadius: 4, fontSize: 11, color: C.good, display: 'flex', alignItems: 'center', gap: 6 }}>
                           <span>✓</span> İş vardiya içinde (16:55) başarıyla tamamlandı.
                         </div>
@@ -1414,7 +1418,7 @@ function App({ currentUser, onLogout }) {
                           {dayIndex === 4 && (
                             <div style={{ marginBottom: 10, background: '#0E1520', padding: 8, borderRadius: 4, border: `1px solid ${C.weekend}` }}>
                               <div style={{ fontSize: 11, color: C.weekend, marginBottom: 6, fontWeight: 600 }}>
-                                ⚠ Cuma Günü Mesai / Haftasonu Planı:
+                                ⚠ {activeJobName} için Cuma Mesai / Haftasonu Planı:
                               </div>
                               <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                                 <button
@@ -1442,7 +1446,9 @@ function App({ currentUser, onLogout }) {
                           {/* HAFTAİÇİ DİĞER GÜNLER MESAİ PANELİ */}
                           {dayIndex !== 4 && activeEst?.needsDecision && (
                             <div style={{ marginBottom: 10, background: '#0E1520', padding: 8, borderRadius: 4, border: `1px solid ${C.copper}` }}>
-                              <div style={{ fontSize: 11, color: C.copper, marginBottom: 6, fontWeight: 600 }}>⚠ Bu iş normal mesaide (16:55) bitmiyor — mesai yapılacak mı?</div>
+                              <div style={{ fontSize: 11, color: C.copper, marginBottom: 6, fontWeight: 600 }}>
+                                ⚠ {activeJobName} normal mesaide (16:55) bitmiyor — mesai yapılacak mı?
+                              </div>
                               <div style={{ display: 'flex', gap: 6 }}>
                                 <button
                                   onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'yes')}
@@ -1463,18 +1469,18 @@ function App({ currentUser, onLogout }) {
                           {dayIndex !== 4 && (activeEst?.mode === 'overtime' || activeEst?.mode === 'exceeds' || activeEst?.mode === 'carryover') && !activeEst?.needsDecision && (
                             <div style={{ marginBottom: 8, background: '#0E1520', padding: '6px 8px', borderRadius: 4, border: `1px solid ${C.border}` }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                                <span style={{ fontSize: 10.5, color: C.dim }}>Mesai Kararı:</span>
+                                <span style={{ fontSize: 10.5, color: C.dim }}>{activeJobName} Mesai Kararı:</span>
                                 <button onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'yes')} style={{ fontSize: 10.5, fontWeight: 600, padding: '3px 8px', cursor: 'pointer', borderRadius: 3, background: entry.overtimeDecision === 'yes' ? C.copper : 'transparent', border: `1px solid ${C.copper}`, color: entry.overtimeDecision === 'yes' ? '#0B0F17' : C.copper }}>Mesai Yapılacak</button>
                                 <button onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'no')} style={{ fontSize: 10.5, fontWeight: 600, padding: '3px 8px', cursor: 'pointer', borderRadius: 3, background: entry.overtimeDecision === 'no' ? C.bad : 'transparent', border: `1px solid ${C.bad}`, color: entry.overtimeDecision === 'no' ? '#0B0F17' : C.bad }}>Mesai Yapılmayacak</button>
                               </div>
                               {activeEst?.mode === 'overtime' && (
-                                <div style={{ fontSize: 10.5, color: C.copper }}>⚠ Mesai yapılacak — iş normal mesaide bitmiyor (17:25–20:00 çalışma)</div>
+                                <div style={{ fontSize: 10.5, color: C.copper }}>⚠ Mesai yapılacak — {activeJobName} normal mesaide bitmiyor (17:25–20:00 çalışma)</div>
                               )}
                               {activeEst?.mode === 'exceeds' && (
                                 <div style={{ fontSize: 10.5, color: C.bad }}>⚠ Mesai yapılsa da (20:00'a kadar) yetişmiyor — ≈{Math.round(activeEst.overMinutes)} dk aşım, kalan kısım yarına devredebilir</div>
                               )}
                               {activeEst?.mode === 'carryover' && (
-                                <div style={{ fontSize: 10.5, color: C.bad }}>⚠ Mesai yapılmayacak — iş normal mesaide (16:55) biten kısımla kalıp yarına devredecek</div>
+                                <div style={{ fontSize: 10.5, color: C.bad }}>⚠ Mesai yapılmayacak — {activeJobName} normal mesaide (16:55) biten kısımla kalıp yarına devredecek</div>
                               )}
                             </div>
                           )}
@@ -1533,7 +1539,7 @@ function App({ currentUser, onLogout }) {
                     <div style={{ minWidth: 120, flex: 1 }}>
                       <div style={{ fontSize: 11, color: C.dim, marginBottom: 2 }}>{c ? c.station.name.replace('Final Temizlik - ', '') : FINAL_STAGES[i].replace('Final Temizlik - ', '')}</div>
                       <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13.5, color: C.paper }}>
-                        {c ? minToTime(c.startMin) : '—'} → <span style={{ color: c?.mode === 'exceeds' || c?.mode === 'carryover' ? C.bad : c?.mode?.includes('weekend') ? C.weekend : c?.mode === 'overtime' || c?.mode === 'pending' ? C.copper : C.good, fontWeight: 700 }}>{c ? c.label : '—'}</span>
+                        {c ? minToTime(c.startMin) : '—'} → <span style={{ color: c?.mode === 'exceeds' || c?.mode === 'carryover' ? C.bad : c?.mode?.includes('weekend') ? C.weekend : c?.mode === 'overtime' || c?.mode === 'pending' || c?.mode === 'pending_friday' ? C.copper : C.good, fontWeight: 700 }}>{c ? c.label : '—'}</span>
                       </div>
                     </div>
                     {i < FINAL_STAGES.length - 1 && <div style={{ display: 'flex', alignItems: 'center', color: C.dim, fontSize: 14 }}>→</div>}
