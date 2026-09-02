@@ -31,7 +31,7 @@
   }
   .num-input:focus { outline: none; border-color: #00E5FF; box-shadow: 0 0 10px rgba(0,229,255,0.35); }
   .num-input::placeholder { color: #3F5A6D; }
-  .num-input-sm { padding: 6px 6px; font-size: 12px; }
+  .num-input-sm { padding: 5px 4px; font-size: 12px; }
   input[type=number]::-webkit-inner-spin-button,
   input[type=number]::-webkit-outer-spin-button { opacity: 0.5; }
   .idle-card {
@@ -447,6 +447,7 @@ function App({ currentUser, onLogout }) {
     scheduleWrite('stations', id, { [field]: value });
   }
 
+  // 1. İş veya 2. İş saatleri değiştiğinde gerçekleşen a-s değerlerini otomatik hesapla
   function updateEntry(dKey, stationId, field, value) {
     const key = `${dKey}|${stationId}`;
     const current = data.entries[key] || {};
@@ -457,7 +458,7 @@ function App({ currentUser, onLogout }) {
     const absentStaff = parseFloat(merged.absentStaff) || 0;
     const present = Math.max(totalStaff - absentStaff, 0);
 
-    // 1. İş adam-saati
+    // 1. İş gerçekleşen a-s
     if (merged.actualEndTime && !merged.isIdle) {
       const startMin = timeToMin(merged.startTime) ?? SHIFT_START_MIN;
       const endMin = timeToMin(merged.actualEndTime);
@@ -469,7 +470,7 @@ function App({ currentUser, onLogout }) {
       patch.actual = '';
     }
 
-    // 2. İş adam-saati
+    // 2. İş gerçekleşen a-s
     if (merged.hasSecondJob && merged.secondJobActualEndTime && !merged.isIdle) {
       const startMin2 = timeToMin(merged.secondJobStartTime) ?? (timeToMin(merged.actualEndTime) || SHIFT_START_MIN);
       const endMin2 = timeToMin(merged.secondJobActualEndTime);
@@ -904,7 +905,7 @@ function App({ currentUser, onLogout }) {
 
         {/* Secili gunun istasyon girisleri */}
         <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderTop: 'none', padding: 16, marginBottom: 24 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 14 }}>
             {data.stations.filter(s => s.active !== false).map((s) => {
               const entry = data.entries[`${selectedKey}|${s.id}`] || {};
               const isIdle = !!entry.isIdle;
@@ -923,22 +924,24 @@ function App({ currentUser, onLogout }) {
               const lossHours = (totalStandard != null && totalActual > 0) ? totalActual - totalStandard : null;
               const lossPercent = (lossHours != null && totalStandard > 0) ? (lossHours / totalStandard) * 100 : null;
               const showStatus = hasAnyInput(entry) && !isIdle;
-              
-              const isFinalStage = FINAL_STAGES.includes(s.name);
-              const cascadeInfo = isFinalStage ? finalCascade.find((c) => c && c.station.id === s.id) : null;
-              
-              let displayInfo = cascadeInfo;
-              if (!isFinalStage && !isIdle) {
-                const explicitStart = timeToMin(entry.startTime);
-                const startMinGeneric = explicitStart != null ? explicitStart : SHIFT_START_MIN;
-                const neededMinGeneric = stageRequiredMinutes(totalStandard, presentStaff, allowancePercent);
-                if (neededMinGeneric != null) {
-                  const est = estimateWithDecision(startMinGeneric, neededMinGeneric, entry.overtimeDecision);
-                  displayInfo = { startMin: startMinGeneric, finishMin: est.finishMin, mode: est.mode, overMinutes: est.overMinutes || 0, needsDecision: est.needsDecision, autoStart: explicitStart == null };
-                } else {
-                  displayInfo = null;
-                }
+
+              // 1. İş Teorik Bitiş Saati Hesabı
+              const j1StartMin = timeToMin(entry.startTime) ?? SHIFT_START_MIN;
+              const j1Standard = cDay ? cDay.job1Standard : s.standardHours;
+              const j1NeededMin = stageRequiredMinutes(j1Standard, presentStaff, allowancePercent);
+              const j1Est = j1NeededMin != null ? estimateWithDecision(j1StartMin, j1NeededMin, entry.overtimeDecision) : null;
+
+              // 2. İş Teorik Bitiş Saati Hesabı
+              let j2Est = null;
+              if (entry.hasSecondJob) {
+                const j2StartMin = timeToMin(entry.secondJobStartTime) ?? (timeToMin(entry.actualEndTime) || j1Est?.finishMin || SHIFT_START_MIN);
+                const j2Standard = parseFloat(entry.secondJobStandard) || s.standardHours || 0;
+                const j2NeededMin = stageRequiredMinutes(j2Standard, presentStaff, allowancePercent);
+                j2Est = j2NeededMin != null ? estimateWithDecision(j2StartMin, j2NeededMin, entry.overtimeDecision) : null;
               }
+
+              // Genel Mesai Kararı Gereksinimi
+              const activeEst = entry.hasSecondJob ? (j2Est || j1Est) : j1Est;
 
               return (
                 <div key={s.id} className={isIdle ? 'idle-card' : ''} style={{ background: C.panelAlt, border: `1px solid ${C.border}`, padding: 14, transition: 'all 0.3s ease' }}>
@@ -1002,7 +1005,7 @@ function App({ currentUser, onLogout }) {
                         )}
                       </div>
 
-                      {/* 1. İŞ (DÜNDEN DEVREDEN VEYA İLK İŞ) */}
+                      {/* 1. İŞ KUTUSU (BAŞLAMA - TEORİK BİTİŞ - GERÇEK BİTİŞ - HARCANAN) */}
                       <div style={{ background: C.page, border: `1px solid ${C.border}`, borderRadius: 3, padding: '10px 10px', marginBottom: 10 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                           <span style={{ fontSize: 12, fontFamily: "'JetBrains Mono', monospace", color: cDay?.isCarryover ? C.copper : C.line, fontWeight: 700 }}>
@@ -1015,10 +1018,16 @@ function App({ currentUser, onLogout }) {
                           )}
                         </div>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 4 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, marginBottom: 4 }}>
                           <div>
                             <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>Başlama</div>
                             <input type="time" className="num-input num-input-sm" value={entry.startTime || ''} placeholder="06:55" onChange={(e) => updateEntry(selectedKey, s.id, 'startTime', e.target.value)} />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 9.5, color: C.copper, marginBottom: 3, textAlign: 'center', fontWeight: 600 }}>Teorik Bitiş</div>
+                            <div style={{ background: 'rgba(255,166,64,0.08)', border: `1px solid ${C.copper}66`, borderRadius: 3, padding: '5px 2px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: C.copper, fontWeight: 700 }}>
+                              {j1Est && j1Est.finishMin != null ? minToTime(j1Est.finishMin) : '—'}
+                            </div>
                           </div>
                           <div>
                             <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>Gerçek Bitiş</div>
@@ -1026,7 +1035,7 @@ function App({ currentUser, onLogout }) {
                           </div>
                           <div>
                             <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>Harcanan</div>
-                            <div style={{ background: 'rgba(3,8,14,0.9)', border: `1px solid ${C.border}`, borderRadius: 3, padding: '6px 4px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: C.paper, fontWeight: 700 }}>
+                            <div style={{ background: 'rgba(3,8,14,0.9)', border: `1px solid ${C.border}`, borderRadius: 3, padding: '5px 2px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: C.paper, fontWeight: 700 }}>
                               {entry.actual ? `${parseFloat(entry.actual).toFixed(1)} a-s` : '—'}
                             </div>
                           </div>
@@ -1069,7 +1078,7 @@ function App({ currentUser, onLogout }) {
                           GÜN İÇİNDE 2. YENİ İŞİ BAŞLAT
                         </button>
                       ) : (
-                        /* 2. İŞ AÇILDIĞINDA GÖRÜNEN DETAY KUTUSU */
+                        /* 2. İŞ KUTUSU (BAŞLAMA - TEORİK BİTİŞ - GERÇEK BİTİŞ - HARCANAN) */
                         <div style={{ background: 'rgba(8, 15, 24, 0.95)', border: '1px solid #FFA640', borderRadius: 4, padding: '10px', marginBottom: 10, boxShadow: '0 0 16px rgba(255, 166, 64, 0.15)' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, borderBottom: '1px solid rgba(255, 166, 64, 0.3)', paddingBottom: 6 }}>
                             <span style={{ fontSize: 12, color: '#FFA640', fontFamily: "'Rajdhani', sans-serif", fontWeight: 700, letterSpacing: 0.5 }}>
@@ -1104,18 +1113,24 @@ function App({ currentUser, onLogout }) {
                             <span style={{ fontSize: 11, color: C.dim }}>adam-saat</span>
                           </div>
 
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 4 }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, marginBottom: 4 }}>
                             <div>
-                              <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>2. İş Başlama</div>
+                              <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>2. Başlama</div>
                               <input type="time" className="num-input num-input-sm" value={entry.secondJobStartTime || ''} placeholder={entry.actualEndTime || '12:50'} onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobStartTime', e.target.value)} />
                             </div>
                             <div>
-                              <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>2. İş Bitiş</div>
+                              <div style={{ fontSize: 9.5, color: '#FFA640', marginBottom: 3, textAlign: 'center', fontWeight: 600 }}>Teorik Bitiş</div>
+                              <div style={{ background: 'rgba(255,166,64,0.1)', border: '1px solid #FFA64088', borderRadius: 3, padding: '5px 2px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#FFA640', fontWeight: 700 }}>
+                                {j2Est && j2Est.finishMin != null ? minToTime(j2Est.finishMin) : '—'}
+                              </div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>Gerçek Bitiş</div>
                               <input type="time" className="num-input num-input-sm" value={entry.secondJobActualEndTime || ''} placeholder="16:55" onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobActualEndTime', e.target.value)} />
                             </div>
                             <div>
-                              <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>2. İş Harcanan</div>
-                              <div style={{ background: 'rgba(3,8,14,0.9)', border: '1px solid #FFA640', borderRadius: 3, padding: '6px 4px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#FFA640', fontWeight: 700 }}>
+                              <div style={{ fontSize: 9.5, color: C.dim, marginBottom: 3, textAlign: 'center' }}>Harcanan</div>
+                              <div style={{ background: 'rgba(3,8,14,0.9)', border: '1px solid #FFA640', borderRadius: 3, padding: '5px 2px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#FFA640', fontWeight: 700 }}>
                                 {entry.secondJobActual ? `${parseFloat(entry.secondJobActual).toFixed(1)} a-s` : '—'}
                               </div>
                             </div>
@@ -1137,7 +1152,8 @@ function App({ currentUser, onLogout }) {
                         </span>
                       </div>
 
-                      {displayInfo?.needsDecision && (
+                      {/* Ek Mesai Kararı Butonları */}
+                      {activeEst?.needsDecision && (
                         <div style={{ marginBottom: 10 }}>
                           <div style={{ fontSize: 10.5, color: C.copper, marginBottom: 5, fontFamily: "'JetBrains Mono', monospace" }}>⚠ Bu iş normal mesaide (16:55) bitmiyor — mesai yapılacak mı?</div>
                           <div style={{ display: 'flex', gap: 6 }}>
