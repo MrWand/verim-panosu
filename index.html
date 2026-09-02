@@ -218,7 +218,7 @@ function effColor(eff) {
 }
 
 function hasAnyInput(e) {
-  return !!(e && (e.isIdle || e.actual || e.secondJobActual || e.totalStaff || e.absentStaff || e.target || e.produced));
+  return !!(e && (e.isIdle || e.actual || e.secondJobActual || e.totalStaff || e.absentStaff || e.target || e.produced || e.startTime || e.actualEndTime));
 }
 
 function DimensionBar({ eff, height = 12 }) {
@@ -528,7 +528,6 @@ function App({ currentUser, onLogout }) {
     scheduleWrite('entries', key, patch);
   }
 
-  // Seçili günün tüm verilerini sıfırlama fonksiyonu
   function resetDayData() {
     const dayLabel = `${DAY_NAMES[dayIndex]} ${selectedDate.getDate()} ${MONTHS[selectedDate.getMonth()]}`;
     if (!confirm(`${dayLabel} gününe ait tüm istasyon verilerini sıfırlamak istediğinize emin misiniz? Bu işlem geri alınamaz.`)) return;
@@ -553,18 +552,43 @@ function App({ currentUser, onLogout }) {
     return data.stations.some((s) => hasAnyInput(data.entries[`${k}|${s.id}`]));
   }
 
+  // DÜZELTİLEN AKILLI DEVREDEN İŞ MOTORU:
+  // Sadece önceki gün fiilen bir çalışma yapılmışsa ve iş bitmemişse yarına devreder!
   const carryoverMap = useMemo(() => {
     const map = {};
     data.stations.forEach((s) => {
       let carry = null;
       const days = weekDates.map((d) => {
         const e = data.entries[`${dateKey(d)}|${s.id}`];
+        const hasInput = hasAnyInput(e);
         const isIdle = !!e?.isIdle;
-        
-        if (isIdle) {
-          return { baseCarry: carry, job1Standard: null, job2Standard: null, totalStandard: null, job1Actual: null, job2Actual: null, totalActual: null, remainder: carry, isCarryover: carry != null, isIdle: true };
+
+        // Eğer o gün hiçbir giriş yoksa veya gün boşta ise:
+        if (!hasInput || isIdle) {
+          const result = {
+            baseCarry: carry,
+            job1Standard: carry != null ? carry : s.standardHours,
+            job1Actual: 0,
+            job1Remainder: carry != null ? carry : 0,
+            job1Completed: null,
+            hasJob2: false,
+            job2Standard: 0,
+            job2Actual: 0,
+            job2Remainder: 0,
+            job2Completed: null,
+            totalStandard: carry != null ? carry : s.standardHours,
+            totalActual: 0,
+            remainder: carry,
+            isCarryover: carry != null,
+            isIdle
+          };
+          if (!hasInput) {
+            carry = null; // Gün boşsa veya sıfırlandıysa ertesi güne hayali devreden taşınamaz!
+          }
+          return result;
         }
 
+        // Gün için fiilen giriş yapılmış:
         const isCarryover = carry != null;
         const job1Standard = carry != null ? carry : s.standardHours;
         const job1Actual = parseFloat(e?.actual) || 0;
@@ -583,23 +607,27 @@ function App({ currentUser, onLogout }) {
           job2Remainder = Math.max(job2Standard - job2Actual, 0);
         }
 
-        const nextCarry = hasJob2 ? (job2Remainder > 0.05 ? job2Remainder : null) : (job1Remainder > 0.05 ? job1Remainder : null);
-        carry = nextCarry;
+        // Yarına devredecek kalan saat: Sadece o gün fiili çalışma girilmişse kalan aktarılır!
+        if (hasJob2) {
+          carry = (job2Actual > 0 && job2Remainder > 0.05) ? job2Remainder : null;
+        } else {
+          carry = (job1Actual > 0 && job1Remainder > 0.05) ? job1Remainder : null;
+        }
 
         const totalStandard = (job1Standard || 0) + (hasJob2 ? job2Standard : 0);
         const totalActual = job1Actual + job2Actual;
 
         return {
-          baseCarry: isCarryover ? (job1Standard) : null,
+          baseCarry: isCarryover ? job1Standard : null,
           job1Standard,
           job1Actual,
           job1Remainder,
-          job1Completed: job1Standard ? Math.min((job1Actual / job1Standard) * 100, 100) : null,
+          job1Completed: (job1Standard && job1Actual > 0) ? Math.min((job1Actual / job1Standard) * 100, 100) : null,
           hasJob2,
           job2Standard,
           job2Actual,
           job2Remainder,
-          job2Completed: job2Standard ? Math.min((job2Actual / job2Standard) * 100, 100) : null,
+          job2Completed: (job2Standard && job2Actual > 0) ? Math.min((job2Actual / job2Standard) * 100, 100) : null,
           totalStandard: totalStandard > 0 ? totalStandard : null,
           totalActual: totalActual > 0 ? totalActual : null,
           remainder: carry,
@@ -985,6 +1013,7 @@ function App({ currentUser, onLogout }) {
                 j2Est = j2NeededMin != null ? estimateWithDecision(j2StartMin, j2NeededMin, entry.overtimeDecision) : null;
               }
 
+              // Aktif İşin Fazla Mesai Durumu
               const activeEst = entry.hasSecondJob ? (j2Est || j1Est) : j1Est;
 
               return (
@@ -1069,8 +1098,8 @@ function App({ currentUser, onLogout }) {
                           </div>
                           <div>
                             <div style={{ fontSize: 9.5, color: C.copper, marginBottom: 3, textAlign: 'center', fontWeight: 600 }}>Teorik Bitiş</div>
-                            <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: `1px solid rgba(245, 158, 11, 0.3)`, borderRadius: 3, padding: '5px 2px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: C.copper, fontWeight: 700 }}>
-                              {j1Est && j1Est.finishMin != null ? minToTime(j1Est.finishMin) : '—'}
+                            <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: `1px solid rgba(245, 158, 11, 0.3)`, borderRadius: 3, padding: '5px 2px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: j1Est?.mode === 'exceeds' || j1Est?.mode === 'carryover' ? C.bad : j1Est?.mode === 'overtime' ? C.copper : C.good, fontWeight: 700 }}>
+                              {j1Est?.mode === 'carryover' ? '↷ Devir' : j1Est && j1Est.finishMin != null ? minToTime(j1Est.finishMin) : '—'}
                             </div>
                           </div>
                           <div>
@@ -1158,8 +1187,8 @@ function App({ currentUser, onLogout }) {
                             </div>
                             <div>
                               <div style={{ fontSize: 9.5, color: C.copper, marginBottom: 3, textAlign: 'center', fontWeight: 600 }}>Teorik Bitiş</div>
-                              <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: 3, padding: '5px 2px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: C.copper, fontWeight: 700 }}>
-                                {j2Est && j2Est.finishMin != null ? minToTime(j2Est.finishMin) : '—'}
+                              <div style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: 3, padding: '5px 2px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, color: j2Est?.mode === 'exceeds' || j2Est?.mode === 'carryover' ? C.bad : j2Est?.mode === 'overtime' ? C.copper : C.good, fontWeight: 700 }}>
+                                {j2Est?.mode === 'carryover' ? '↷ Devir' : j2Est && j2Est.finishMin != null ? minToTime(j2Est.finishMin) : '—'}
                               </div>
                             </div>
                             <div>
@@ -1190,23 +1219,43 @@ function App({ currentUser, onLogout }) {
                         </span>
                       </div>
 
+                      {/* EK MESAİ KARARI & BUTONLARI (İLK DOSYADAKİ GİBİ TAM FONKSİYONEL) */}
                       {activeEst?.needsDecision && (
-                        <div style={{ marginBottom: 10 }}>
-                          <div style={{ fontSize: 11, color: C.copper, marginBottom: 5 }}>⚠ Bu iş normal mesaide (16:55) bitmiyor — mesai yapılacak mı?</div>
+                        <div style={{ marginBottom: 10, background: '#0E1520', padding: 8, borderRadius: 4, border: `1px solid ${C.copper}` }}>
+                          <div style={{ fontSize: 11, color: C.copper, marginBottom: 6, fontWeight: 600 }}>⚠ Bu iş normal mesaide (16:55) bitmiyor — mesai yapılacak mı?</div>
                           <div style={{ display: 'flex', gap: 6 }}>
                             <button
                               onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'yes')}
-                              style={{ flex: 1, fontSize: 11, fontWeight: 600, padding: '6px 0', cursor: 'pointer', borderRadius: 4, background: `${C.copper}15`, border: `1px solid ${C.copper}`, color: C.copper }}
+                              style={{ flex: 1, fontSize: 11, fontWeight: 700, padding: '6px 0', cursor: 'pointer', borderRadius: 4, background: `${C.copper}22`, border: `1px solid ${C.copper}`, color: C.copper }}
                             >
                               Mesai Yapılacak
                             </button>
                             <button
                               onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'no')}
-                              style={{ flex: 1, fontSize: 11, fontWeight: 600, padding: '6px 0', cursor: 'pointer', borderRadius: 4, background: `${C.bad}15`, border: `1px solid ${C.bad}`, color: C.bad }}
+                              style={{ flex: 1, fontSize: 11, fontWeight: 700, padding: '6px 0', cursor: 'pointer', borderRadius: 4, background: `${C.bad}22`, border: `1px solid ${C.bad}`, color: C.bad }}
                             >
                               Mesai Yapılmayacak
                             </button>
                           </div>
+                        </div>
+                      )}
+
+                      {(activeEst?.mode === 'overtime' || activeEst?.mode === 'exceeds' || activeEst?.mode === 'carryover') && !activeEst?.needsDecision && (
+                        <div style={{ marginBottom: 8, background: '#0E1520', padding: '6px 8px', borderRadius: 4, border: `1px solid ${C.border}` }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                            <span style={{ fontSize: 10.5, color: C.dim }}>Mesai Kararı:</span>
+                            <button onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'yes')} style={{ fontSize: 10.5, fontWeight: 600, padding: '3px 8px', cursor: 'pointer', borderRadius: 3, background: entry.overtimeDecision === 'yes' ? C.copper : 'transparent', border: `1px solid ${C.copper}`, color: entry.overtimeDecision === 'yes' ? '#0B0F17' : C.copper }}>Mesai Yapılacak</button>
+                            <button onClick={() => updateEntry(selectedKey, s.id, 'overtimeDecision', 'no')} style={{ fontSize: 10.5, fontWeight: 600, padding: '3px 8px', cursor: 'pointer', borderRadius: 3, background: entry.overtimeDecision === 'no' ? C.bad : 'transparent', border: `1px solid ${C.bad}`, color: entry.overtimeDecision === 'no' ? '#0B0F17' : C.bad }}>Mesai Yapılmayacak</button>
+                          </div>
+                          {activeEst?.mode === 'overtime' && (
+                            <div style={{ fontSize: 10.5, color: C.copper }}>⚠ Mesai yapılacak — iş normal mesaide bitmiyor (17:25–20:00 çalışma)</div>
+                          )}
+                          {activeEst?.mode === 'exceeds' && (
+                            <div style={{ fontSize: 10.5, color: C.bad }}>⚠ Mesai yapılsa da (20:00'a kadar) yetişmiyor — ≈{Math.round(activeEst.overMinutes)} dk aşım, kalan kısım yarına devredebilir</div>
+                          )}
+                          {activeEst?.mode === 'carryover' && (
+                            <div style={{ fontSize: 10.5, color: C.bad }}>⚠ Mesai yapılmayacak — iş normal mesaide (16:55) biten kısımla kalıp yarına devredecek</div>
+                          )}
                         </div>
                       )}
 
