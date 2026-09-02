@@ -384,6 +384,32 @@ function App() {
     return data.stations.some((s) => hasAnyInput(data.entries[`${k}|${s.id}`]));
   }
 
+  // Bir iş o gün bitmezse (standart tamamlanamazsa) kalan kısmı bir sonraki güne "devreden" olarak taşır.
+  const carryoverMap = useMemo(() => {
+    const map = {};
+    data.stations.forEach((s) => {
+      let carry = null;
+      const days = weekDates.map((d) => {
+        const e = data.entries[`${dateKey(d)}|${s.id}`];
+        const effectiveStandard = carry != null ? carry : s.standardHours;
+        const isCarryover = carry != null;
+        if (!hasAnyInput(e)) {
+          return { effectiveStandard, actual: null, completionPercent: null, remainder: null, isCarryover };
+        }
+        const act = parseFloat(e.actual) || 0;
+        if (effectiveStandard == null) {
+          return { effectiveStandard: null, actual: act, completionPercent: null, remainder: null, isCarryover };
+        }
+        const completionPercent = Math.min((act / effectiveStandard) * 100, 100);
+        const remainder = Math.max(effectiveStandard - act, 0);
+        carry = remainder > 0.05 ? remainder : null;
+        return { effectiveStandard, actual: act, completionPercent, remainder, isCarryover };
+      });
+      map[s.id] = days;
+    });
+    return map;
+  }, [data, weekDates]);
+
   const finalCascade = useMemo(() => {
     let cursor = null;
     const results = [];
@@ -396,35 +422,39 @@ function App() {
       const totalStaff = parseFloat(entry.totalStaff) || 0;
       const absentStaff = parseFloat(entry.absentStaff) || 0;
       const present = Math.max(totalStaff - absentStaff, 0);
-      const neededMin = stageRequiredMinutes(st.standardHours, present, allowancePercent);
+      const cInfo = carryoverMap[st.id]?.[dayIndex];
+      const effectiveStandard = cInfo ? cInfo.effectiveStandard : st.standardHours;
+      const neededMin = stageRequiredMinutes(effectiveStandard, present, allowancePercent);
       let finishMin = null, mode = 'normal', overMinutes = 0;
       if (neededMin != null) { const r = estimateWithOvertime(startMin, neededMin); finishMin = r.finishMin; mode = r.mode; overMinutes = r.overMinutes || 0; }
-      results.push({ station: st, startMin, neededMin, finishMin, mode, overMinutes, present, autoStart: explicitStart == null });
+      results.push({ station: st, startMin, neededMin, finishMin, mode, overMinutes, present, autoStart: explicitStart == null, effectiveStandard, isCarryover: cInfo?.isCarryover });
       cursor = finishMin != null ? finishMin : startMin;
     });
     return results;
-  }, [data, selectedKey, allowancePercent]);
+  }, [data, selectedKey, allowancePercent, carryoverMap, dayIndex]);
 
   const stationSummaries = useMemo(() => {
     return data.stations.map((s) => {
       let sum = 0, count = 0, totalActual = 0, totalStandardExpected = 0, totalAbsent = 0, totalLost = 0, presentSum = 0, presentDays = 0, totalCapacityShortfall = 0;
-      weekDates.forEach((d) => {
+      weekDates.forEach((d, i) => {
         const e = data.entries[`${dateKey(d)}|${s.id}`];
-        const eff = calcEff(e, s.standardHours);
+        const cInfo = carryoverMap[s.id]?.[i];
+        const effectiveStandard = cInfo ? cInfo.effectiveStandard : s.standardHours;
+        const eff = calcEff(e, effectiveStandard);
         if (eff !== null) { sum += eff; count += 1; }
         if (hasAnyInput(e)) {
           const act = parseFloat(e.actual) || 0;
           const tot = parseFloat(e.totalStaff) || 0;
           const abs = parseFloat(e.absentStaff) || 0;
           totalActual += act;
-          if (s.standardHours != null) totalStandardExpected += s.standardHours;
+          if (effectiveStandard != null) totalStandardExpected += effectiveStandard;
           totalAbsent += abs;
           totalLost += abs * shiftHours;
           if (tot > 0) {
             const present = Math.max(tot - abs, 0);
             presentSum += present; presentDays += 1;
-            if (s.standardHours != null) {
-              const shortfall = s.standardHours - present * shiftHours;
+            if (effectiveStandard != null) {
+              const shortfall = effectiveStandard - present * shiftHours;
               if (shortfall > 0) totalCapacityShortfall += shortfall;
             }
           }
@@ -433,9 +463,9 @@ function App() {
       const lossTotal = s.standardHours != null ? totalActual - totalStandardExpected : null;
       const lossPercentAvg = (lossTotal != null && totalStandardExpected > 0) ? (lossTotal / totalStandardExpected) * 100 : null;
       const avgPresent = presentDays > 0 ? presentSum / presentDays : 0;
-      return { ...s, avg: count > 0 ? sum / count : null, totalActual, totalStandardExpected, lossTotal, lossPercentAvg, totalCapacityShortfall, totalAbsent, totalLost, avgPresent, days: count };
+      return { ...s, avg: count > 0 ? sum / count : null, totalActual, totalStandardExpected, lossTotal, lossPercentAvg, totalCapacityShortfall, totalAbsent, totalLost, avgPresent, days: count, dayDetails: carryoverMap[s.id] || [] };
     }).sort((a, b) => { if (a.avg === null) return 1; if (b.avg === null) return -1; return b.avg - a.avg; });
-  }, [data, weekDates, shiftHours]);
+  }, [data, weekDates, shiftHours, carryoverMap]);
 
   const weekAvg = useMemo(() => {
     const vals = stationSummaries.filter((s) => s.avg !== null).map((s) => s.avg);
@@ -622,7 +652,9 @@ function App() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 12 }}>
             {data.stations.map((s) => {
               const entry = data.entries[`${selectedKey}|${s.id}`] || {};
-              const eff = calcEff(entry, s.standardHours);
+              const cDay = carryoverMap[s.id]?.[dayIndex];
+              const effectiveStandard = cDay ? cDay.effectiveStandard : s.standardHours;
+              const eff = calcEff(entry, effectiveStandard);
               const color = effColor(eff);
               const actualNum = parseFloat(entry.actual) || 0;
               const hasActual = entry.actual !== undefined && entry.actual !== '';
@@ -630,18 +662,20 @@ function App() {
               const absentStaff = parseFloat(entry.absentStaff) || 0;
               const presentStaff = Math.max(totalStaff - absentStaff, 0);
               const lostHours = absentStaff * shiftHours;
-              const lossHours = (s.standardHours != null && hasActual) ? actualNum - s.standardHours : null;
-              const lossPercent = (lossHours != null && s.standardHours > 0) ? (lossHours / s.standardHours) * 100 : null;
+              const lossHours = (effectiveStandard != null && hasActual) ? actualNum - effectiveStandard : null;
+              const lossPercent = (lossHours != null && effectiveStandard > 0) ? (lossHours / effectiveStandard) * 100 : null;
               const capacity = totalStaff > 0 ? presentStaff * shiftHours : null;
-              const capacityShortfall = (s.standardHours != null && capacity != null) ? s.standardHours - capacity : null;
+              const capacityShortfall = (effectiveStandard != null && capacity != null) ? effectiveStandard - capacity : null;
               const showStatus = hasAnyInput(entry);
+              const completionPercent = cDay?.completionPercent ?? null;
+              const carryToNext = (cDay?.remainder != null && cDay.remainder > 0.05) ? cDay.remainder : null;
               const isFinalStage = FINAL_STAGES.includes(s.name);
               const cascadeInfo = isFinalStage ? finalCascade.find((c) => c && c.station.id === s.id) : null;
               let displayInfo = cascadeInfo;
               if (!isFinalStage) {
                 const explicitStart = timeToMin(entry.startTime);
                 const startMinGeneric = explicitStart != null ? explicitStart : SHIFT_START_MIN;
-                const neededMinGeneric = stageRequiredMinutes(s.standardHours, presentStaff, allowancePercent);
+                const neededMinGeneric = stageRequiredMinutes(effectiveStandard, presentStaff, allowancePercent);
                 if (neededMinGeneric != null) {
                   const est = estimateWithOvertime(startMinGeneric, neededMinGeneric);
                   displayInfo = { startMin: startMinGeneric, finishMin: est.finishMin, mode: est.mode, overMinutes: est.overMinutes || 0, autoStart: explicitStart == null };
@@ -657,12 +691,28 @@ function App() {
                       {eff === null ? '—' : `${Math.round(eff)}%`}
                     </span>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
                     <GroupTag group={s.group} />
                     <span style={{ fontSize: 11, color: C.dim, fontFamily: "'JetBrains Mono', monospace" }}>
-                      Standart: {s.standardHours != null ? `${s.standardHours} a-s` : 'belirlenmedi'}
+                      {cDay?.isCarryover
+                        ? `Bugünkü hedef: ${effectiveStandard.toFixed(1)} a-s (dünden devreden)`
+                        : `Standart: ${s.standardHours != null ? `${s.standardHours} a-s` : 'belirlenmedi'}`}
                     </span>
                   </div>
+                  {(completionPercent != null || carryToNext != null) && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap', background: C.page, border: `1px solid ${C.border}`, borderRadius: 3, padding: '6px 10px' }}>
+                      {completionPercent != null && (
+                        <span style={{ fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace", color: completionPercent >= 100 ? C.good : C.copper }}>
+                          Bugün tamamlanan: %{Math.round(completionPercent)}
+                        </span>
+                      )}
+                      {carryToNext != null && (
+                        <span style={{ fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace", color: C.bad }}>
+                          ⚠ Yarına devreden: {carryToNext.toFixed(1)} a-s
+                        </span>
+                      )}
+                    </div>
+                  )}
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
                     <div>
@@ -718,7 +768,7 @@ function App() {
 
                   {showStatus && (
                     <div style={{ marginTop: 8, fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace", display: 'flex', flexDirection: 'column', gap: 3 }}>
-                      {s.standardHours == null ? (
+                      {effectiveStandard == null ? (
                         <span style={{ color: C.dim }}>Standart girilmedi — verim ve kayıp hesaplanamıyor</span>
                       ) : lossHours == null ? (
                         <span style={{ color: C.dim }}>Gerçekleşen adam-saat girilmedi</span>
