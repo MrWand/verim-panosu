@@ -37,7 +37,6 @@
     transform: scale(0.98);
   }
 
-  /* Sürükle Bırak Stilleri */
   .station-drag-row {
     cursor: grab;
     user-select: none;
@@ -317,75 +316,6 @@ const SHIFT_END_MIN = timeToMin(SHIFT_BLOCKS[SHIFT_BLOCKS.length - 1].end);
 const OT_END_MIN = timeToMin(OVERTIME_BLOCK.end);
 const NET_SHIFT_MIN = SHIFT_BLOCKS.reduce((acc, b) => acc + (timeToMin(b.end) - timeToMin(b.start)), 0);
 
-function estimateFinishTime(startMin, workMinutesNeeded, blocks) {
-  blocks = blocks || SHIFT_BLOCKS;
-  if (startMin == null || workMinutesNeeded == null || workMinutesNeeded <= 0) return { finishMin: startMin, overflow: false };
-  let remaining = workMinutesNeeded;
-  const lastBlockEnd = timeToMin(blocks[blocks.length - 1].end);
-  for (const block of blocks) {
-    const bStart = timeToMin(block.start), bEnd = timeToMin(block.end);
-    if (bEnd <= startMin) continue;
-    const segStart = Math.max(bStart, startMin);
-    const segAvail = bEnd - segStart;
-    if (segAvail <= 0) continue;
-    if (remaining <= segAvail) return { finishMin: segStart + remaining, overflow: false };
-    remaining -= segAvail;
-  }
-  return { finishMin: lastBlockEnd + remaining, overflow: true };
-}
-
-function estimateWithDecision(startMin, workMinutesNeeded, decision, dayIdx = 0) {
-  const normal = estimateFinishTime(startMin, workMinutesNeeded, SHIFT_BLOCKS);
-  if (!normal.overflow) return { finishMin: normal.finishMin, mode: 'normal', needsDecision: false, label: minToTime(normal.finishMin) };
-  
-  if (dayIdx === 4) {
-    if (decision === 'yes' || decision === 'friday_ot') {
-      const withOT = estimateFinishTime(startMin, workMinutesNeeded, ALL_BLOCKS);
-      if (!withOT.overflow) {
-        return { finishMin: withOT.finishMin, mode: 'overtime', needsDecision: false, label: `${minToTime(withOT.finishMin)} (Cuma Mesai)` };
-      }
-      const remSat = withOT.finishMin - OT_END_MIN;
-      const satEst = estimateFinishTime(SHIFT_START_MIN, remSat, SHIFT_BLOCKS);
-      if (!satEst.overflow) {
-        return { finishMin: satEst.finishMin, mode: 'weekend_sat', needsDecision: false, label: `↷ Cmt ${minToTime(satEst.finishMin)}` };
-      }
-      const remSun = satEst.finishMin - SHIFT_END_MIN;
-      const sunEst = estimateFinishTime(SHIFT_START_MIN, remSun, SHIFT_BLOCKS);
-      return { finishMin: sunEst.finishMin, mode: 'weekend_sun', needsDecision: false, label: `↷ Paz ${minToTime(sunEst.finishMin)}` };
-    }
-    if (decision === 'sat_only') {
-      const fridayWorkDone = workMinutesBetween(startMin, SHIFT_END_MIN, SHIFT_BLOCKS);
-      const remSat = workMinutesNeeded - fridayWorkDone;
-      const satEst = estimateFinishTime(SHIFT_START_MIN, remSat, SHIFT_BLOCKS);
-      if (!satEst.overflow) {
-        return { finishMin: satEst.finishMin, mode: 'weekend_sat', needsDecision: false, label: `↷ Cmt ${minToTime(satEst.finishMin)}` };
-      }
-      const remSun = satEst.finishMin - SHIFT_END_MIN;
-      const sunEst = estimateFinishTime(SHIFT_START_MIN, remSun, SHIFT_BLOCKS);
-      return { finishMin: sunEst.finishMin, mode: 'weekend_sun', needsDecision: false, label: `↷ Paz ${minToTime(sunEst.finishMin)}` };
-    }
-    if (decision === 'no') {
-      return { finishMin: normal.finishMin, mode: 'carryover', needsDecision: false, label: '↷ Pzt Devir' };
-    }
-    return { finishMin: normal.finishMin, mode: 'pending_friday', needsDecision: true, label: '? Karar Bekliyor' };
-  }
-
-  if (decision === 'yes') {
-    const withOT = estimateFinishTime(startMin, workMinutesNeeded, ALL_BLOCKS);
-    if (!withOT.overflow) return { finishMin: withOT.finishMin, mode: 'overtime', needsDecision: false, label: minToTime(withOT.finishMin) };
-    return { finishMin: withOT.finishMin, mode: 'exceeds', overMinutes: withOT.finishMin - OT_END_MIN, needsDecision: false, label: '> 20:00 (Aşım)' };
-  }
-  if (decision === 'no') {
-    return { finishMin: normal.finishMin, mode: 'carryover', needsDecision: false, label: '↷ Devir' };
-  }
-  return { finishMin: normal.finishMin, mode: 'pending', needsDecision: true, label: '? Karar Bekliyor' };
-}
-
-function stageRequiredMinutes(standardHours, presentStaff) {
-  if (standardHours == null || !presentStaff || presentStaff <= 0) return null;
-  return (standardHours * 60) / presentStaff;
-}
-
 function workMinutesBetween(startMin, endMin, blocks) {
   blocks = blocks || ALL_BLOCKS;
   if (startMin == null || endMin == null || endMin <= startMin) return 0;
@@ -397,6 +327,127 @@ function workMinutesBetween(startMin, endMin, blocks) {
     if (segEnd > segStart) total += segEnd - segStart;
   });
   return total;
+}
+
+// DİNAMİK PARÇALI PERSONEL VE GEÇİCİ DURUŞ HESAPLAMA MOTORU
+function calcDynamicSegmentsActual(startMin, endMin, baseStaff, shifts) {
+  if (startMin == null || endMin == null || endMin <= startMin) return { totalActual: 0, segments: [] };
+  const sorted = (shifts || [])
+    .filter(s => s.time && s.staff !== '' && s.staff != null)
+    .map(s => ({ min: timeToMin(s.time), staff: Math.max(parseFloat(s.staff) || 0, 0), note: s.note || '' }))
+    .filter(s => s.min > startMin)
+    .sort((a, b) => a.min - b.min);
+
+  const points = [startMin];
+  sorted.forEach(s => {
+    if (s.min < endMin && !points.includes(s.min)) points.push(s.min);
+  });
+  points.push(endMin);
+  points.sort((a, b) => a - b);
+
+  let totalActual = 0;
+  const segments = [];
+
+  for (let i = 0; i < points.length - 1; i++) {
+    const sFrom = points[i];
+    const sTo = points[i + 1];
+    if (sTo <= sFrom) continue;
+
+    // Bu aralıkta geçerli personel
+    const activeShift = sorted.filter(s => s.min <= sFrom).pop();
+    const staffNow = activeShift ? activeShift.staff : baseStaff;
+    const note = activeShift ? activeShift.note : '';
+
+    const netMin = workMinutesBetween(sFrom, sTo, ALL_BLOCKS);
+    const act = Math.round(((netMin * staffNow) / 60) * 100) / 100;
+    totalActual += act;
+
+    segments.push({
+      fromTime: minToTime(sFrom),
+      toTime: minToTime(sTo),
+      staff: staffNow,
+      netMin,
+      act,
+      note,
+      isPaused: staffNow === 0
+    });
+  }
+
+  return { totalActual: Math.round(totalActual * 100) / 100, segments };
+}
+
+// PERSONEL KAYDIRMALI VE BEKLEMELİ TEORİK BİTİŞ SAATİ SİMÜLASYONU
+function estimateDynamicFinishTime(startMin, standardHours, baseStaff, shifts, decision, dayIdx = 0) {
+  if (standardHours == null || standardHours <= 0) return { finishMin: startMin, mode: 'normal', label: minToTime(startMin) };
+  const sortedShifts = (shifts || [])
+    .filter(s => s.time && s.staff !== '' && s.staff != null)
+    .map(s => ({ min: timeToMin(s.time), staff: Math.max(parseFloat(s.staff) || 0, 0), note: s.note || '' }))
+    .sort((a, b) => a.min - b.min);
+
+  if ((baseStaff == null || baseStaff <= 0) && sortedShifts.length === 0) return null;
+
+  let remainingManMinutes = standardHours * 60;
+
+  function consumeMinutes(fromMin, toMin, blocks) {
+    for (const b of blocks) {
+      const bStart = timeToMin(b.start), bEnd = timeToMin(b.end);
+      if (bEnd <= fromMin || bStart >= toMin) continue;
+      const segStart = Math.max(bStart, fromMin);
+      const segEnd = Math.min(bEnd, toMin);
+
+      for (let m = segStart; m < segEnd; m++) {
+        const active = sortedShifts.filter(s => s.min <= m).pop();
+        const staffNow = active ? active.staff : baseStaff;
+
+        if (staffNow > 0) {
+          remainingManMinutes -= staffNow;
+          if (remainingManMinutes <= 0) {
+            return { finishMin: m + 1, finished: true };
+          }
+        }
+      }
+    }
+    return { finishMin: toMin, finished: false };
+  }
+
+  // 1. Normal Vardiya (06:55 - 16:55)
+  const norm = consumeMinutes(startMin, SHIFT_END_MIN, SHIFT_BLOCKS);
+  if (norm.finished) {
+    return { finishMin: norm.finishMin, mode: 'normal', needsDecision: false, label: minToTime(norm.finishMin) };
+  }
+
+  // 2. Cuma Durumu
+  if (dayIdx === 4) {
+    if (decision === 'yes' || decision === 'friday_ot') {
+      const ot = consumeMinutes(SHIFT_END_MIN, OT_END_MIN, [OVERTIME_BLOCK]);
+      if (ot.finished) return { finishMin: ot.finishMin, mode: 'overtime', needsDecision: false, label: `${minToTime(ot.finishMin)} (Cuma Mesai)` };
+      const sat = consumeMinutes(SHIFT_START_MIN, SHIFT_END_MIN, SHIFT_BLOCKS);
+      if (sat.finished) return { finishMin: sat.finishMin, mode: 'weekend_sat', needsDecision: false, label: `↷ Cmt ${minToTime(sat.finishMin)}` };
+      const sun = consumeMinutes(SHIFT_START_MIN, SHIFT_END_MIN, SHIFT_BLOCKS);
+      return { finishMin: sun.finishMin, mode: 'weekend_sun', needsDecision: false, label: `↷ Paz ${minToTime(sun.finishMin)}` };
+    }
+    if (decision === 'sat_only') {
+      const sat = consumeMinutes(SHIFT_START_MIN, SHIFT_END_MIN, SHIFT_BLOCKS);
+      if (sat.finished) return { finishMin: sat.finishMin, mode: 'weekend_sat', needsDecision: false, label: `↷ Cmt ${minToTime(sat.finishMin)}` };
+      const sun = consumeMinutes(SHIFT_START_MIN, SHIFT_END_MIN, SHIFT_BLOCKS);
+      return { finishMin: sun.finishMin, mode: 'weekend_sun', needsDecision: false, label: `↷ Paz ${minToTime(sun.finishMin)}` };
+    }
+    if (decision === 'no') {
+      return { finishMin: norm.finishMin, mode: 'carryover', needsDecision: false, label: '↷ Pzt Devir' };
+    }
+    return { finishMin: norm.finishMin, mode: 'pending_friday', needsDecision: true, label: '? Karar Bekliyor' };
+  }
+
+  // 3. Normal Hafta İçi Mesai
+  if (decision === 'yes') {
+    const ot = consumeMinutes(SHIFT_END_MIN, OT_END_MIN, [OVERTIME_BLOCK]);
+    if (ot.finished) return { finishMin: ot.finishMin, mode: 'overtime', needsDecision: false, label: minToTime(ot.finishMin) };
+    return { finishMin: ot.finishMin, mode: 'exceeds', overMinutes: 30, needsDecision: false, label: '> 20:00 (Aşım)' };
+  }
+  if (decision === 'no') {
+    return { finishMin: norm.finishMin, mode: 'carryover', needsDecision: false, label: '↷ Devir' };
+  }
+  return { finishMin: norm.finishMin, mode: 'pending', needsDecision: true, label: '? Karar Bekliyor' };
 }
 
 function calcLiveProgress(startMin, finishMin, isDone, nowMin) {
@@ -461,7 +512,7 @@ function effColor(eff, C) {
 }
 
 function hasAnyInput(e) {
-  return !!(e && (e.isIdle || e.wagonNo || e.secondJobWagonNo || e.actual || e.secondJobActual || e.totalStaff || e.absentStaff || e.target || e.produced || e.startTime || e.actualEndTime || e.downtimeReason));
+  return !!(e && (e.isIdle || e.wagonNo || e.secondJobWagonNo || e.actual || e.secondJobActual || e.totalStaff || e.absentStaff || e.target || e.produced || e.startTime || e.actualEndTime || e.downtimeReason || (e.staffShifts && e.staffShifts.length > 0)));
 }
 
 function DimensionBar({ eff, height = 10 }) {
@@ -506,14 +557,14 @@ function WagonDetailModal({ wagon, nowMin, onClose }) {
 
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: C.modalOverlay, backdropFilter: 'blur(5px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ background: C.modalCardBg, border: `1px solid ${C.border}`, borderRadius: 12, width: '100%', maxWidth: 700, maxHeight: '90vh', overflowY: 'auto', padding: 24, boxShadow: C.cardShadow }}>
+      <div style={{ background: C.modalCardBg, border: `1px solid ${C.border}`, borderRadius: 12, width: '100%', maxWidth: 720, maxHeight: '90vh', overflowY: 'auto', padding: 24, boxShadow: C.cardShadow }}>
         
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, borderBottom: `1px solid ${C.border}`, paddingBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 38, height: 38, borderRadius: 8, background: 'linear-gradient(135deg, #0078D4, #005A9E)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 18 }}>🚆</div>
             <div>
               <div style={{ fontSize: 18, fontWeight: 700, color: C.paper }}>Vagon: #{wagon.wagonNo}</div>
-              <div style={{ fontSize: 12, color: C.dim }}>Haftalık Üretim & Hat Süreci Yolculuğu</div>
+              <div style={{ fontSize: 12, color: C.dim }}>Haftalık Üretim, Duruş ve Personel Kaydırma Geçmişi</div>
             </div>
           </div>
           <button onClick={onClose} style={{ background: C.panelAlt, border: `1px solid ${C.border}`, borderRadius: '50%', width: 28, height: 28, color: C.dim, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
@@ -547,7 +598,7 @@ function WagonDetailModal({ wagon, nowMin, onClose }) {
         </div>
 
         <div style={{ fontSize: 12, fontWeight: 700, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>
-          İstasyon Bazlı Süreç ve Canlı İlerleme
+          İstasyon Bazlı Süreç, Personel & Duruş Takibi
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -567,11 +618,19 @@ function WagonDetailModal({ wagon, nowMin, onClose }) {
                     <span style={{ fontSize: 11, color: C.dim, background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, padding: '2px 6px' }}>{step.jobName}</span>
                   </div>
 
-                  <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 4, background: step.isDone ? C.successBadgeBg : C.warningBadgeBg, color: step.isDone ? C.good : C.copper, border: `1px solid ${step.isDone ? C.successBadgeBorder : C.warningBadgeBorder}` }}>
-                    {step.isDone ? '✓ Tamamlandı' : '⏳ Devam Ediyor'}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {step.isCurrentlyPaused && (
+                      <span style={{ fontSize: 10.5, fontWeight: 600, padding: '2px 7px', borderRadius: 4, background: C.warningBadgeBg, color: C.copper, border: `1px solid ${C.warningBadgeBorder}` }}>
+                        ⏸️ İstasyon Beklemede
+                      </span>
+                    )}
+                    <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 4, background: step.isDone ? C.successBadgeBg : C.warningBadgeBg, color: step.isDone ? C.good : C.copper, border: `1px solid ${step.isDone ? C.successBadgeBorder : C.warningBadgeBorder}` }}>
+                      {step.isDone ? '✓ Tamamlandı' : '⏳ Devam Ediyor'}
+                    </span>
+                  </div>
                 </div>
 
+                {/* Canlı İlerleme Çubuğu */}
                 <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5, marginBottom: 5 }}>
                     <span style={{ fontWeight: 600, color: C.paper, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -589,6 +648,28 @@ function WagonDetailModal({ wagon, nowMin, onClose }) {
                     </div>
                   )}
                 </div>
+
+                {/* Personel Kaydırma ve Duruş Detay Dökümü */}
+                {step.segments && step.segments.length > 1 && (
+                  <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 11 }}>
+                    <div style={{ fontWeight: 700, color: C.line, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span>👥 Vardiya İçi Personel / Bekleme Dağılımı:</span>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      {step.segments.map((seg, sIdx) => (
+                        <div key={sIdx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: seg.isPaused ? C.copper : C.paper }}>
+                          <span>
+                            <strong>{seg.fromTime} - {seg.toTime}:</strong> {seg.isPaused ? '⏸️ İstasyon Beklemede (0 Kişi)' : `👥 ${seg.staff} Kişi`}
+                            {seg.note && <span style={{ color: C.dim, marginLeft: 6 }}>({seg.note})</span>}
+                          </span>
+                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
+                            {seg.act.toFixed(1)} a-s
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, fontSize: 12, color: C.dim, borderTop: `1px solid ${C.border}`, paddingTop: 8 }}>
                   <div>
@@ -846,7 +927,10 @@ function App({ currentUser, onLogout }) {
   const [wagonSearchQuery, setWagonSearchQuery] = useState('');
   const [wagonStatusFilter, setWagonStatusFilter] = useState('all');
 
-  // MOUSE İLE SÜRÜKLE - BIRAK (DRAG & DROP) DURUMLARI
+  // İstasyon başına açık olan personel kaydırma paneli state'i
+  const [openShiftPanelStationId, setOpenShiftPanelStationId] = useState(null);
+
+  // Mouse ile Sürükle - Bırak (Drag & Drop)
   const [draggedIndex, setDraggedIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
   
@@ -959,7 +1043,6 @@ function App({ currentUser, onLogout }) {
     setNewStation(''); setNewStandard('');
   }
 
-  // MOUSE İLE SÜRÜKLE BIRAK OLAY YÖNETİCİLERİ
   function handleDragStart(e, index) {
     setDraggedIndex(index);
     e.dataTransfer.effectAllowed = 'move';
@@ -998,7 +1081,6 @@ function App({ currentUser, onLogout }) {
     batch.commit().then(() => recordActivity()).catch((err) => console.error('Sıralama kaydetme hatası', err));
   }
 
-  // Butonla Kaydırma (Opsiyonel alternatif)
   function moveStation(index, direction) {
     const targetIndex = index + direction;
     if (targetIndex < 0 || targetIndex >= data.stations.length) return;
@@ -1044,6 +1126,7 @@ function App({ currentUser, onLogout }) {
     scheduleWrite('stations', id, { [field]: value });
   }
 
+  // GÜNLÜK GİRİŞ GÜNCELLEME (PARÇALI PERSONEL VE GEÇİCİ DURUŞ DESTEKLİ)
   function updateEntry(dKey, stationId, field, value) {
     const key = `${dKey}|${stationId}`;
     const current = data.entries[key] || {};
@@ -1054,17 +1137,19 @@ function App({ currentUser, onLogout }) {
     const absentStaff = parseFloat(merged.absentStaff) || 0;
     const present = Math.max(totalStaff - absentStaff, 0);
 
+    // 1. İş gerçekleşen a-s (Personel değişimleri hesaba katılarak)
     if (merged.actualEndTime && !merged.isIdle) {
       const startMin = timeToMin(merged.startTime) ?? SHIFT_START_MIN;
       const endMin = timeToMin(merged.actualEndTime);
-      if (endMin != null && present > 0) {
-        const workMin = workMinutesBetween(startMin, endMin, ALL_BLOCKS);
-        patch.actual = Math.round(((workMin * present) / 60) * 100) / 100;
+      if (endMin != null) {
+        const dyn = calcDynamicSegmentsActual(startMin, endMin, present, merged.staffShifts);
+        patch.actual = dyn.totalActual;
       }
     } else if (field === 'actualEndTime' && !value) {
       patch.actual = '';
     }
 
+    // 2. İş gerçekleşen a-s
     if (merged.hasSecondJob && merged.secondJobActualEndTime && !merged.isIdle) {
       const startMin2 = timeToMin(merged.secondJobStartTime) ?? (timeToMin(merged.actualEndTime) || SHIFT_START_MIN);
       const endMin2 = timeToMin(merged.secondJobActualEndTime);
@@ -1082,6 +1167,37 @@ function App({ currentUser, onLogout }) {
       return { ...prev, entries };
     });
     scheduleWrite('entries', key, patch);
+  }
+
+  // PERSONEL KAYDIRMA & GEÇİCİ DURUŞ YÖNETİMİ
+  function addStaffShift(dKey, stationId, defaultTime, defaultStaff) {
+    const key = `${dKey}|${stationId}`;
+    const current = data.entries[key] || {};
+    const list = [...(current.staffShifts || [])];
+    list.push({
+      id: Date.now().toString(36),
+      time: defaultTime || '11:00',
+      staff: defaultStaff != null ? defaultStaff : 4,
+      note: 'Aksesuar Kaynak takviyesi'
+    });
+    updateEntry(dKey, stationId, 'staffShifts', list);
+  }
+
+  function updateStaffShiftItem(dKey, stationId, shiftIndex, field, value) {
+    const key = `${dKey}|${stationId}`;
+    const current = data.entries[key] || {};
+    const list = [...(current.staffShifts || [])];
+    if (!list[shiftIndex]) return;
+    list[shiftIndex] = { ...list[shiftIndex], [field]: value };
+    updateEntry(dKey, stationId, 'staffShifts', list);
+  }
+
+  function removeStaffShiftItem(dKey, stationId, shiftIndex) {
+    const key = `${dKey}|${stationId}`;
+    const current = data.entries[key] || {};
+    const list = [...(current.staffShifts || [])];
+    list.splice(shiftIndex, 1);
+    updateEntry(dKey, stationId, 'staffShifts', list);
   }
 
   function toggleSecondJob(dKey, stationId, defaultStart, defaultStandard) {
@@ -1281,18 +1397,20 @@ function App({ currentUser, onLogout }) {
       const present = Math.max(totalStaff - absentStaff, 0);
       const cInfo = carryoverMap[st.id]?.[dayIndex];
       const effectiveStandard = cInfo ? cInfo.totalStandard : st.standardHours;
-      const neededMin = stageRequiredMinutes(effectiveStandard, present);
+
       let finishMin = null, mode = 'normal', overMinutes = 0, needsDecision = false, label = '—';
-      if (neededMin != null) { 
-        const r = estimateWithDecision(startMin, neededMin, entry.overtimeDecision, dayIndex); 
-        finishMin = r.finishMin; mode = r.mode; overMinutes = r.overMinutes || 0; needsDecision = r.needsDecision; label = r.label;
+      if (effectiveStandard != null) { 
+        const r = estimateDynamicFinishTime(startMin, effectiveStandard, present, entry.staffShifts, entry.overtimeDecision, dayIndex);
+        if (r) {
+          finishMin = r.finishMin; mode = r.mode; overMinutes = r.overMinutes || 0; needsDecision = r.needsDecision; label = r.label;
+        }
       }
       const wagonNo = (entry.wagonNo || cInfo?.job1WagonNo || '').trim();
-      results.push({ station: st, wagonNo, startMin, neededMin, finishMin, mode, overMinutes, needsDecision, label, present, autoStart: explicitStart == null, effectiveStandard, isCarryover: cInfo?.isCarryover });
+      results.push({ station: st, wagonNo, startMin, finishMin, mode, overMinutes, needsDecision, label, present, autoStart: explicitStart == null, effectiveStandard, isCarryover: cInfo?.isCarryover });
       cursor = finishMin != null ? finishMin : startMin;
     });
     return results;
-  }, [data, selectedKey, allowancePercent, carryoverMap, dayIndex]);
+  }, [data, selectedKey, carryoverMap, dayIndex]);
 
   const stationSummaries = useMemo(() => {
     return data.stations
@@ -1430,6 +1548,7 @@ function App({ currentUser, onLogout }) {
     return { list, totalDowntimeHours };
   }, [data, weekDates, carryoverMap]);
 
+  // VAGON YAŞAM DÖNGÜSÜ & PERSONEL DEĞİŞİMİ / DURUŞ ENTEGRELİ MATRİS
   const wagonsCatalog = useMemo(() => {
     const map = {};
 
@@ -1446,6 +1565,13 @@ function App({ currentUser, onLogout }) {
         const totalStaff = parseFloat(e.totalStaff) || 0;
         const absentStaff = parseFloat(e.absentStaff) || 0;
         const presentStaff = Math.max(totalStaff - absentStaff, 0);
+
+        // O anki personel durumu (durduruldu mu?)
+        const shifts = e.staffShifts || [];
+        const sortedShifts = [...shifts].filter(sh => sh.time).sort((a, b) => timeToMin(a.time) - timeToMin(b.time));
+        const activeShiftNow = sortedShifts.filter(sh => timeToMin(sh.time) <= nowMin).pop();
+        const currentStaffNow = activeShiftNow ? parseFloat(activeShiftNow.staff) : presentStaff;
+        const isCurrentlyPaused = currentStaffNow === 0;
 
         const w1 = (e.wagonNo || cInfo?.job1WagonNo || '').trim();
         if (w1) {
@@ -1466,9 +1592,11 @@ function App({ currentUser, onLogout }) {
           const j1StatusText = e.job1Status === 'in_progress' ? 'Devam Ediyor' : (isDone ? 'Tamamlandı' : 'Başlandı');
           
           const startMin1 = timeToMin(e.startTime) ?? SHIFT_START_MIN;
-          const neededMin1 = stageRequiredMinutes(j1Std, presentStaff);
-          const est1 = neededMin1 != null ? estimateWithDecision(startMin1, neededMin1, e.overtimeDecision, i) : null;
+          const est1 = estimateDynamicFinishTime(startMin1, j1Std, presentStaff, shifts, e.overtimeDecision, i);
           const finishMin1 = est1 ? est1.finishMin : (timeToMin(e.actualEndTime) || SHIFT_END_MIN);
+
+          // Parçalı çalışma dökümü
+          const dyn = calcDynamicSegmentsActual(startMin1, timeToMin(e.actualEndTime) || finishMin1, presentStaff, shifts);
 
           map[w1].steps.push({
             day: dayName,
@@ -1485,11 +1613,16 @@ function App({ currentUser, onLogout }) {
             endTime: e.actualEndTime,
             status: j1StatusText,
             isDone,
+            isCurrentlyPaused,
+            hasStaffShift: shifts.length > 0,
+            shiftsCount: shifts.length,
+            currentStaffNow,
+            segments: dyn.segments,
             downtimeReason: e.downtimeReason
           });
           map[w1].totalActual += j1Act;
           if (j1Std != null) map[w1].totalStandard += j1Std;
-          map[w1].latestStatus = j1StatusText;
+          map[w1].latestStatus = isCurrentlyPaused ? 'İstasyon Beklemede' : j1StatusText;
           map[w1].stationsSet.add(s.name);
         }
 
@@ -1513,8 +1646,7 @@ function App({ currentUser, onLogout }) {
             const j2StatusText = e.secondJobStatus === 'in_progress' ? 'Devam Ediyor' : (isDone2 ? 'Tamamlandı' : 'Başlandı');
 
             const startMin2 = timeToMin(e.secondJobStartTime) ?? (timeToMin(e.actualEndTime) || SHIFT_START_MIN);
-            const neededMin2 = stageRequiredMinutes(j2Std, presentStaff);
-            const est2 = neededMin2 != null ? estimateWithDecision(startMin2, neededMin2, e.overtimeDecision, i) : null;
+            const est2 = estimateDynamicFinishTime(startMin2, j2Std, presentStaff, [], e.overtimeDecision, i);
             const finishMin2 = est2 ? est2.finishMin : (timeToMin(e.secondJobActualEndTime) || SHIFT_END_MIN);
 
             map[w2].steps.push({
@@ -1532,6 +1664,8 @@ function App({ currentUser, onLogout }) {
               endTime: e.secondJobActualEndTime,
               status: j2StatusText,
               isDone: isDone2,
+              isCurrentlyPaused: false,
+              hasStaffShift: false,
               downtimeReason: e.downtimeReason
             });
             map[w2].totalActual += j2Act;
@@ -1553,7 +1687,8 @@ function App({ currentUser, onLogout }) {
         stationsCount: w.stationsSet.size,
         stationsList: Array.from(w.stationsSet),
         overallEff,
-        liveProg
+        liveProg,
+        isPaused: lastStep?.isCurrentlyPaused
       };
     }).sort((a, b) => a.wagonNo.localeCompare(b.wagonNo, undefined, { numeric: true }));
   }, [data, weekDates, carryoverMap, nowMin]);
@@ -1660,7 +1795,7 @@ function App({ currentUser, onLogout }) {
   }
 
   function exportCSV() {
-    const header = ['Tarih', 'İstasyon', 'Grup', 'Durum', '1. İş Vagon No', '1. İş Durumu', '1. İş Başlangıç', '1. İş Bitiş', '1. İş Standart (a-s)', '1. İş Gerçekleşen (a-s)', '2. İş Vagon No', '2. İş Durumu', '2. İş Başlangıç', '2. İş Bitiş', '2. İş Standart (a-s)', '2. İş Gerçekleşen (a-s)', 'Toplam Standart', 'Toplam Gerçekleşen', 'Personel', 'Devamsız', 'Duruş Nedeni', 'Verim (%)'];
+    const header = ['Tarih', 'İstasyon', 'Grup', 'Durum', '1. İş Vagon No', '1. İş Durumu', '1. İş Başlangıç', '1. İş Bitiş', '1. İş Standart (a-s)', '1. İş Gerçekleşen (a-s)', '2. İş Vagon No', '2. İş Durumu', '2. İş Başlangıç', '2. İş Bitiş', '2. İş Standart (a-s)', '2. İş Gerçekleşen (a-s)', 'Toplam Standart', 'Toplam Gerçekleşen', 'Personel', 'Devamsız', 'Personel Kaydırma Bilgisi', 'Duruş Nedeni', 'Verim (%)'];
     const lines = [header.join(';')];
     weekDates.forEach((d) => {
       const dKey = dateKey(d);
@@ -1668,7 +1803,7 @@ function App({ currentUser, onLogout }) {
         const e = data.entries[`${dKey}|${s.id}`];
         if (!hasAnyInput(e)) return;
         if (e.isIdle) {
-          lines.push([dKey, s.name, GROUP_LABEL[s.group], 'Planlı Boşta', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''].join(';'));
+          lines.push([dKey, s.name, GROUP_LABEL[s.group], 'Planlı Boşta', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', ''].join(';'));
           return;
         }
         const cDay = carryoverMap[s.id]?.find((_, idx) => weekDates[idx].getTime() === d.getTime());
@@ -1681,6 +1816,8 @@ function App({ currentUser, onLogout }) {
         const w2 = e.hasSecondJob ? ((e.secondJobWagonNo || w1).trim()) : '';
         const j2Status = e.hasSecondJob ? (e.secondJobStatus === 'in_progress' ? 'Devam Ediyor' : (e.secondJobActualEndTime ? 'Tamamlandı' : 'Başlandı')) : '';
         const dt = getDowntimeInfo(e.downtimeReason);
+
+        const shiftsInfo = (e.staffShifts || []).map(sh => `${sh.time} -> ${sh.staff}k (${sh.note || ''})`).join(' | ');
 
         lines.push([
           dKey, 
@@ -1703,6 +1840,7 @@ function App({ currentUser, onLogout }) {
           act > 0 ? act.toFixed(1) : '',
           e.totalStaff || '', 
           e.absentStaff || '', 
+          shiftsInfo,
           dt ? dt.short : '',
           eff === null ? '' : Math.round(eff)
         ].join(';'));
@@ -2003,7 +2141,6 @@ function App({ currentUser, onLogout }) {
                           transition: 'all 0.12s ease'
                         }}
                       >
-                        {/* Mouse ile Tutma Tutamacı (Drag Handle) & Sıra Numarası */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: C.dim }}>
                           <span style={{ fontSize: 16, lineHeight: 1, letterSpacing: -1, color: C.line, fontWeight: 700 }} title="Mouse ile basılı tutup yukarı/aşağı sürükleyin">
                             ⠿
@@ -2012,7 +2149,6 @@ function App({ currentUser, onLogout }) {
                             {String(idx + 1).padStart(2, '0')}
                           </span>
 
-                          {/* İsteğe Bağlı Ok Butonları */}
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginRight: 2 }}>
                             <button
                               type="button"
@@ -2161,17 +2297,20 @@ function App({ currentUser, onLogout }) {
                   const lossPercent = (lossHours != null && totalStandard > 0) ? (lossHours / totalStandard) * 100 : null;
                   const showStatus = hasAnyInput(entry) && !isIdle;
 
+                  const shifts = entry.staffShifts || [];
+                  const isShiftPanelOpen = openShiftPanelStationId === s.id;
+
+                  // 1. İş Dinamik Teorik Bitiş Saati (Personel Kaydırma & Bekleme Dikkate Alınarak)
                   const j1StartMin = timeToMin(entry.startTime) ?? SHIFT_START_MIN;
                   const j1Standard = cDay ? cDay.job1Standard : s.standardHours;
-                  const j1NeededMin = stageRequiredMinutes(j1Standard, presentStaff);
-                  const j1Est = j1NeededMin != null ? estimateWithDecision(j1StartMin, j1NeededMin, entry.overtimeDecision, dayIndex) : null;
+                  const j1Est = j1Standard != null ? estimateDynamicFinishTime(j1StartMin, j1Standard, presentStaff, shifts, entry.overtimeDecision, dayIndex) : null;
 
+                  // 2. İş Teorik Bitiş Saati
                   let j2Est = null;
                   if (entry.hasSecondJob) {
                     const j2StartMin = timeToMin(entry.secondJobStartTime) ?? (timeToMin(entry.actualEndTime) || j1Est?.finishMin || SHIFT_START_MIN);
                     const j2Standard = parseFloat(entry.secondJobStandard) || s.standardHours || 0;
-                    const j2NeededMin = stageRequiredMinutes(j2Standard, presentStaff);
-                    j2Est = j2NeededMin != null ? estimateWithDecision(j2StartMin, j2NeededMin, entry.overtimeDecision, dayIndex) : null;
+                    j2Est = j2Standard > 0 ? estimateDynamicFinishTime(j2StartMin, j2Standard, presentStaff, [], entry.overtimeDecision, dayIndex) : null;
                   }
 
                   const actualEndMin = timeToMin(entry.actualEndTime);
@@ -2187,11 +2326,23 @@ function App({ currentUser, onLogout }) {
                   const activeEst = hasJob2 ? (isJob2Completed ? null : j2Est) : (isJob1Completed ? null : j1Est);
                   const activeJobName = hasJob2 ? '2. İş' : '1. İş';
 
+                  // O anki personel ve duruş durumu
+                  const activeShiftNow = [...shifts].filter(sh => sh.time && timeToMin(sh.time) <= nowMin).sort((a,b) => timeToMin(a.time) - timeToMin(b.time)).pop();
+                  const staffRightNow = activeShiftNow ? parseFloat(activeShiftNow.staff) : presentStaff;
+                  const isCurrentlyPaused = shifts.length > 0 && staffRightNow === 0;
+
                   return (
-                    <div key={s.id} className={isIdle ? 'idle-card' : ''} style={{ background: isIdle ? C.panelAlt : C.panel, border: `1px solid ${isWeekendDay ? (theme === 'light' ? '#C7D2FE' : C.weekend) : C.border}`, borderRadius: 8, padding: 14, boxShadow: C.cardShadow }}>
+                    <div key={s.id} className={isIdle ? 'idle-card' : ''} style={{ background: isIdle ? C.panelAlt : C.panel, border: `1px solid ${isCurrentlyPaused ? C.copper : (isWeekendDay ? (theme === 'light' ? '#C7D2FE' : C.weekend) : C.border)}`, borderRadius: 8, padding: 14, boxShadow: C.cardShadow }}>
                       
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <span style={{ fontWeight: 600, fontSize: 14, color: C.paper }}>{s.name}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ fontWeight: 600, fontSize: 14, color: C.paper }}>{s.name}</span>
+                          {isCurrentlyPaused && (
+                            <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: C.warningBadgeBg, color: C.copper, border: `1px solid ${C.warningBadgeBorder}`, fontWeight: 700 }}>
+                              ⏸️ BEKLEMEDE
+                            </span>
+                          )}
+                        </div>
                         
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <button
@@ -2250,6 +2401,7 @@ function App({ currentUser, onLogout }) {
                         </div>
                       ) : (
                         <>
+                          {/* Vagon Numarası & Durumu */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, background: C.wagonBox, padding: '6px 10px', borderRadius: 6, border: `1px solid ${C.wagonBorder}` }}>
                             <span style={{ fontSize: 11, color: C.wagonText, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
                               <span>🚆</span> Vagon No:
@@ -2287,22 +2439,128 @@ function App({ currentUser, onLogout }) {
                             )}
                           </div>
 
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10, background: C.panelAlt, padding: 8, borderRadius: 6, border: `1px solid ${C.border}` }}>
-                            <div>
-                              <div style={{ fontSize: 10.5, color: C.dim, marginBottom: 3, textAlign: 'center', fontWeight: 500 }}>Mevcut Personel</div>
-                              <input type="number" min="0" step="1" className="num-input num-input-sm" placeholder="0" value={entry.totalStaff || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'totalStaff', e.target.value)} />
+                          {/* Personel Girişi ve Vardiya İçi Kaydırma / Duruş Paneli */}
+                          <div style={{ background: C.panelAlt, padding: 8, borderRadius: 6, border: `1px solid ${C.border}`, marginBottom: 10 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 6 }}>
+                              <div>
+                                <div style={{ fontSize: 10.5, color: C.dim, marginBottom: 3, textAlign: 'center', fontWeight: 500 }}>Başlangıç Personeli</div>
+                                <input type="number" min="0" step="1" className="num-input num-input-sm" placeholder="0" value={entry.totalStaff || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'totalStaff', e.target.value)} />
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 10.5, color: C.dim, marginBottom: 3, textAlign: 'center', fontWeight: 500 }}>Devamsız Personel</div>
+                                <input type="number" min="0" step="1" className="num-input num-input-sm" placeholder="0" value={entry.absentStaff || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'absentStaff', e.target.value)} />
+                              </div>
                             </div>
-                            <div>
-                              <div style={{ fontSize: 10.5, color: C.dim, marginBottom: 3, textAlign: 'center', fontWeight: 500 }}>Devamsız Personel</div>
-                              <input type="number" min="0" step="1" className="num-input num-input-sm" placeholder="0" value={entry.absentStaff || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'absentStaff', e.target.value)} />
+
+                            {/* Personel Kaydırma & Duruş Butonu */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: `1px solid ${C.border}`, paddingTop: 6 }}>
+                              <button
+                                type="button"
+                                onClick={() => setOpenShiftPanelStationId(isShiftPanelOpen ? null : s.id)}
+                                style={{
+                                  background: shifts.length > 0 ? C.totalBoxBg : 'transparent',
+                                  border: `1px solid ${shifts.length > 0 ? C.totalBoxBorder : C.border}`,
+                                  color: shifts.length > 0 ? C.line : C.dim,
+                                  borderRadius: 4,
+                                  padding: '4px 8px',
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 5
+                                }}
+                              >
+                                <span>👥</span> {shifts.length > 0 ? `Personel Değişimi (${shifts.length})` : '+ Personel Kaydırma / Duruş Ekle'}
+                              </button>
+
+                              {shifts.length > 0 && (
+                                <span style={{ fontSize: 10.5, color: C.copper, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>
+                                  Şu an: {staffRightNow} Kişi {isCurrentlyPaused && '(Beklemede)'}
+                                </span>
+                              )}
                             </div>
+
+                            {/* Açılır Personel Kaydırma & İstasyon Dondurma Formu */}
+                            {isShiftPanelOpen && (
+                              <div style={{ marginTop: 8, padding: 10, background: C.panel, borderRadius: 6, border: `1px dashed ${C.line}` }}>
+                                <div style={{ fontSize: 11, fontWeight: 700, color: C.line, marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span>👥 Vardiya İçi Personel Aktarma & Duruşlar</span>
+                                  <button onClick={() => setOpenShiftPanelStationId(null)} style={{ background: 'transparent', border: 'none', color: C.dim, cursor: 'pointer', fontSize: 12 }}>✕</button>
+                                </div>
+                                <div style={{ fontSize: 10.5, color: C.dim, marginBottom: 8, lineHeight: 1.4 }}>
+                                  Personel başka istasyona takviyeye gittiğinde saat ve kalan sayıyı girin. İstasyon tamamen durduysa kalan personeli <strong>0</strong> yapın.
+                                </div>
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                                  {shifts.map((sh, shIdx) => (
+                                    <div key={sh.id || shIdx} style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.panelAlt, padding: '5px 8px', borderRadius: 4, border: `1px solid ${C.border}` }}>
+                                      <input
+                                        type="time"
+                                        className="num-input num-input-sm"
+                                        style={{ width: 75, padding: '2px 4px' }}
+                                        value={sh.time || ''}
+                                        onChange={(e) => updateStaffShiftItem(selectedKey, s.id, shIdx, 'time', e.target.value)}
+                                        title="Değişim/Duruş Başlama Saati"
+                                      />
+                                      <span style={{ fontSize: 11, color: C.dim }}>Kalan:</span>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="1"
+                                        className="num-input num-input-sm"
+                                        style={{ width: 45, padding: '2px 4px', fontWeight: 700, color: sh.staff === 0 ? C.bad : C.paper }}
+                                        value={sh.staff ?? ''}
+                                        onChange={(e) => updateStaffShiftItem(selectedKey, s.id, shIdx, 'staff', e.target.value === '' ? '' : parseFloat(e.target.value))}
+                                        title="Kalan çalışan sayısı (0 ise istasyon bekler)"
+                                      />
+                                      <input
+                                        type="text"
+                                        placeholder="Not (örn: 4 kişi Aksesuar'a gitti)"
+                                        value={sh.note || ''}
+                                        onChange={(e) => updateStaffShiftItem(selectedKey, s.id, shIdx, 'note', e.target.value)}
+                                        style={{ flex: 1, background: C.wagonInputBg, border: `1px solid ${C.border}`, borderRadius: 4, padding: '3px 6px', fontSize: 11, color: C.paper }}
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => removeStaffShiftItem(selectedKey, s.id, shIdx)}
+                                        style={{ background: 'transparent', border: 'none', color: C.bad, cursor: 'pointer', fontSize: 14, padding: '0 4px' }}
+                                        title="Sil"
+                                      >
+                                        ×
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+
+                                <div style={{ display: 'flex', gap: 6 }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => addStaffShift(selectedKey, s.id, '11:00', Math.max(presentStaff - 4, 0))}
+                                    style={{ flex: 1, padding: '5px 8px', background: C.totalBoxBg, border: `1px solid ${C.totalBoxBorder}`, color: C.line, borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                                  >
+                                    + Personel Kaydır
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => addStaffShift(selectedKey, s.id, '11:00', 0)}
+                                    style={{ flex: 1, padding: '5px 8px', background: C.warningBadgeBg, border: `1px solid ${C.warningBadgeBorder}`, color: C.copper, borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                                    title="İstasyonu 0 kişi ile geçici beklemeye alır"
+                                  >
+                                    ⏸️ İstasyonu Durdur (0 Kişi)
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+
                             {absentStaff > 0 && (
-                              <div style={{ gridColumn: '1 / -1', fontSize: 11, color: C.bad, textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>
+                              <div style={{ fontSize: 11, color: C.bad, textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, marginTop: 4 }}>
                                 Devamsızlık kaybı: {lostHours.toFixed(1)} a-s
                               </div>
                             )}
                           </div>
 
+                          {/* 1. İŞ KUTUSU */}
                           <div style={{ background: C.panelAlt, border: `1px solid ${C.border}`, borderRadius: 6, padding: 10, marginBottom: 10 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                               <span style={{ fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace", color: cDay?.isCarryover ? C.copper : C.paper, fontWeight: 700 }}>
@@ -2352,6 +2610,13 @@ function App({ currentUser, onLogout }) {
                               </div>
                             </div>
 
+                            {/* Personel Kaydırma Özeti Varsa */}
+                            {shifts.length > 0 && (
+                              <div style={{ marginTop: 4, fontSize: 10.5, color: C.line, fontFamily: "'JetBrains Mono', monospace" }}>
+                                ℹ Parçalı çalışma: {shifts.map(sh => `${sh.time} ➔ ${sh.staff}k`).join(', ')}
+                              </div>
+                            )}
+
                             {entry.job1Status === 'in_progress' && cDay?.job1Remainder > 0.05 && (
                               <div style={{ fontSize: 11, color: C.copper, fontFamily: "'JetBrains Mono', monospace", marginTop: 4, fontWeight: 600 }}>
                                 ⏳ Devredecek kalan iş: {cDay.job1Remainder.toFixed(1)} a-s
@@ -2359,6 +2624,7 @@ function App({ currentUser, onLogout }) {
                             )}
                           </div>
 
+                          {/* 2. İŞ BAŞLATMA BUTONU / ALANI */}
                           {!entry.hasSecondJob ? (
                             <button
                               type="button"
@@ -2508,6 +2774,7 @@ function App({ currentUser, onLogout }) {
                             </span>
                           </div>
 
+                          {/* Ek Mesai Bildirimleri */}
                           {isCardFullyFinishedOnTime ? (
                             <div style={{ marginBottom: 8, padding: '6px 10px', background: C.successBadgeBg, border: `1px solid ${C.successBadgeBorder}`, borderRadius: 6, fontSize: 11, color: C.good, display: 'flex', alignItems: 'center', gap: 6, fontWeight: 500 }}>
                               <span>✓</span> İş vardiya içinde (16:55) başarıyla tamamlandı.
@@ -2853,7 +3120,7 @@ function App({ currentUser, onLogout }) {
               <div>
                 <div style={{ fontSize: 16, fontWeight: 700, color: C.paper }}>🚆 Vagon İzleme Matrisi & Canlı İlerleme Takibi</div>
                 <div style={{ fontSize: 12, color: C.dim }}>
-                  Başlangıç ve teorik bitiş saatine göre hesaplanan anlık tamamlanma yüzdesi (Şu anki fabrika saati: <strong style={{ color: C.line }}>{minToTime(nowMin)}</strong>)
+                  Personel kaydırma ve duruşlar dahil güncel saat referanslı tamamlanma durumu (Saat: <strong style={{ color: C.line }}>{minToTime(nowMin)}</strong>)
                 </div>
               </div>
 
@@ -2912,8 +3179,10 @@ function App({ currentUser, onLogout }) {
                           <td style={{ padding: '12px' }}>
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                               {w.steps.map((st, idx) => (
-                                <span key={idx} style={{ fontSize: 10.5, padding: '2px 6px', borderRadius: 4, background: st.isDone ? C.successBadgeBg : C.warningBadgeBg, color: st.isDone ? C.good : C.copper, border: `1px solid ${st.isDone ? C.successBadgeBorder : C.warningBadgeBorder}`, fontWeight: 600 }}>
-                                  {st.stationName} ({st.day})
+                                <span key={idx} style={{ fontSize: 10.5, padding: '2px 6px', borderRadius: 4, background: st.isDone ? C.successBadgeBg : (st.isCurrentlyPaused ? C.warningBadgeBg : `${C.line}18`), color: st.isDone ? C.good : (st.isCurrentlyPaused ? C.copper : C.line), border: `1px solid ${st.isDone ? C.successBadgeBorder : (st.isCurrentlyPaused ? C.warningBadgeBorder : `${C.line}44`)}`, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                  <span>{st.stationName}</span>
+                                  {st.isCurrentlyPaused && <span title="İstasyon Beklemede">⏸️</span>}
+                                  {st.hasStaffShift && !st.isCurrentlyPaused && <span title="Personel Kaydırmalı">👥</span>}
                                 </span>
                               ))}
                             </div>
@@ -2941,7 +3210,7 @@ function App({ currentUser, onLogout }) {
                             {w.overallEff != null ? `${Math.round(w.overallEff)}%` : '—'}
                           </td>
                           <td style={{ padding: '12px', textAlign: 'center' }}>
-                            <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, background: w.latestStatus === 'Tamamlandı' ? C.successBadgeBg : C.warningBadgeBg, color: w.latestStatus === 'Tamamlandı' ? C.good : C.copper, border: `1px solid ${w.latestStatus === 'Tamamlandı' ? C.successBadgeBorder : C.warningBadgeBorder}`, fontWeight: 600 }}>
+                            <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, background: w.latestStatus === 'Tamamlandı' ? C.successBadgeBg : (w.isPaused ? C.warningBadgeBg : C.panelAlt), color: w.latestStatus === 'Tamamlandı' ? C.good : (w.isPaused ? C.copper : C.paper), border: `1px solid ${w.latestStatus === 'Tamamlandı' ? C.successBadgeBorder : (w.isPaused ? C.warningBadgeBorder : C.border)}`, fontWeight: 600 }}>
                               {w.latestStatus}
                             </span>
                           </td>
