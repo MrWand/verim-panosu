@@ -1336,8 +1336,9 @@ function App({ currentUser, onLogout }) {
     data.stations.forEach((s) => {
       let carry = null;
       let carryWagon = null;
-      const days = weekDates.map((d) => {
-        const e = data.entries[`${dateKey(d)}|${s.id}`];
+      const days = weekDates.map((d, dayIdx) => {
+        const dKey = dateKey(d);
+        const e = data.entries[`${dKey}|${s.id}`];
         const hasInput = hasAnyInput(e);
         const isIdle = !!e?.isIdle;
 
@@ -1374,13 +1375,24 @@ function App({ currentUser, onLogout }) {
         const job1Standard = carry != null ? carry : s.standardHours;
         const job1Actual = parseFloat(e?.actual) || 0;
         
-        const isJob1InProgress = e?.job1Status === 'in_progress';
+        const timeline = getStationStaffTimeline(dKey, s.id, data.stations, data.entries);
+        const j1StartMin = timeToMin(e?.startTime) ?? SHIFT_START_MIN;
+        const j1Est = job1Standard != null ? estimateDynamicFinishTime(j1StartMin, job1Standard, timeline.baseStaff, timeline.events, e?.overtimeDecision, dayIdx) : null;
+        
+        const willSpillOver = j1Est && (j1Est.mode === 'exceeds' || j1Est.mode === 'carryover' || j1Est.finishMin > (e?.overtimeDecision === 'yes' ? OT_END_MIN : SHIFT_END_MIN));
+        const isJob1ExplicitDone = e?.job1Status === 'completed' && !!e?.actualEndTime;
+        const isJob1InProgress = e?.job1Status === 'in_progress' || (!isJob1ExplicitDone && willSpillOver);
+
         let job1Remainder = 0;
         if (job1Standard != null) {
-          if (isJob1InProgress) {
+          if (e?.actualEndTime && job1Actual > 0) {
             job1Remainder = Math.max(job1Standard - job1Actual, 0);
-          } else {
-            job1Remainder = (job1Actual < job1Standard && !e?.actualEndTime) ? Math.max(job1Standard - job1Actual, 0) : 0;
+          } else if (willSpillOver) {
+            const shiftLimitMin = e?.overtimeDecision === 'yes' ? OT_END_MIN : SHIFT_END_MIN;
+            const dynCap = calcDynamicSegmentsActual(j1StartMin, shiftLimitMin, timeline.baseStaff, timeline.events);
+            job1Remainder = Math.max(job1Standard - dynCap.totalActual, 0);
+          } else if (isJob1InProgress) {
+            job1Remainder = Math.max(job1Standard - job1Actual, 0);
           }
         }
 
@@ -1388,22 +1400,36 @@ function App({ currentUser, onLogout }) {
         const job2WagonNo = hasJob2 ? (e?.secondJobWagonNo || job1WagonNo || '').trim() : '';
         const job2Standard = hasJob2 ? (parseFloat(e?.secondJobStandard) || s.standardHours || 0) : 0;
         const job2Actual = hasJob2 ? (parseFloat(e?.secondJobActual) || 0) : 0;
-        const isJob2InProgress = e?.secondJobStatus === 'in_progress';
         
+        let j2Est = null;
+        if (hasJob2 && job2Standard > 0) {
+          const j2StartMin = timeToMin(e?.secondJobStartTime) ?? (timeToMin(e?.actualEndTime) || SHIFT_START_MIN);
+          j2Est = estimateDynamicFinishTime(j2StartMin, job2Standard, timeline.baseStaff, [], e?.overtimeDecision, dayIdx);
+        }
+        const willJob2SpillOver = j2Est && (j2Est.mode === 'exceeds' || j2Est.mode === 'carryover');
+        const isJob2ExplicitDone = e?.secondJobStatus === 'completed' && !!e?.secondJobActualEndTime;
+        const isJob2InProgress = e?.secondJobStatus === 'in_progress' || (!isJob2ExplicitDone && willJob2SpillOver);
+
         let job2Remainder = 0;
         if (hasJob2 && job2Standard > 0) {
-          if (isJob2InProgress) {
+          if (e?.secondJobActualEndTime && job2Actual > 0) {
             job2Remainder = Math.max(job2Standard - job2Actual, 0);
-          } else {
-            job2Remainder = (job2Actual < job2Standard && !e?.secondJobActualEndTime) ? Math.max(job2Standard - job2Actual, 0) : 0;
+          } else if (willJob2SpillOver) {
+            const shiftLimitMin = e?.overtimeDecision === 'yes' ? OT_END_MIN : SHIFT_END_MIN;
+            const j2StartMin = timeToMin(e?.secondJobStartTime) ?? (timeToMin(e?.actualEndTime) || SHIFT_START_MIN);
+            const netMin = workMinutesBetween(j2StartMin, shiftLimitMin, ALL_BLOCKS);
+            const j2Cap = ((netMin * timeline.baseStaff) / 60);
+            job2Remainder = Math.max(job2Standard - j2Cap, 0);
+          } else if (isJob2InProgress) {
+            job2Remainder = Math.max(job2Standard - job2Actual, 0);
           }
         }
 
         if (hasJob2) {
-          carry = (isJob2InProgress && job2Remainder > 0.05) ? job2Remainder : null;
+          carry = (isJob2InProgress && job2Remainder > 0.05) ? Math.round(job2Remainder * 10) / 10 : null;
           carryWagon = carry ? (e?.secondJobWagonNo || job1WagonNo || '') : null;
         } else {
-          carry = (isJob1InProgress && job1Remainder > 0.05) ? job1Remainder : null;
+          carry = (isJob1InProgress && job1Remainder > 0.05) ? Math.round(job1Remainder * 10) / 10 : null;
           carryWagon = carry ? job1WagonNo : null;
         }
 
@@ -1798,6 +1824,7 @@ function App({ currentUser, onLogout }) {
     }).join('');
 
     const downtimeRows = downtimeSummary.list.map((d) => `<li><strong>${d.label}:</strong> ${d.hours.toFixed(1)} a-s (%${Math.round(d.percent)}) — Etkilenen istasyonlar: ${d.stationsList.join(', ')}</li>`).join('');
+    const overtimeStations = stationSummaries.filter((s) => s.active !== false && s.totalCapacityShortfall > 0.05).sort((a, b) => b.totalCapacityShortfall - a.totalCapacityShortfall);
     const overtimeRows = overtimeStations.map((s) => `<li>${s.name}: ≈${s.totalCapacityShortfall.toFixed(1)} adam-saat kapasite açığı${s.avgPresent > 0 ? ` · ≈${(s.totalCapacityShortfall / s.avgPresent).toFixed(1)} saat/kişi ek mesai` : ''}</li>`).join('');
     const allowanceBreaches = stationSummaries.filter((s) => s.lossPercentAvg != null && s.lossPercentAvg > allowancePercent);
     const allowanceRows = allowanceBreaches.map((s) => `<li>${s.name}: kayıp oranı %${s.lossPercentAvg.toFixed(0)} (izin verilen %${allowancePercent})</li>`).join('');
@@ -1834,7 +1861,7 @@ function App({ currentUser, onLogout }) {
       <h3>Devamsızlık etkisi</h3>
       <p style="font-size:13px">Toplam ${absenteeismTotal.persons} kişi-gün devamsızlık, ${absenteeismTotal.hours.toFixed(1)} adam-saat kayıp.</p>
       <h3>Ek mesai gerekebilecek istasyonlar</h3>
-      ${overtimeStations.length > 0 ? `<ul>${overtimeRows}</ul>` : '<p style="font-size:13px">Bu hafta ek mesai gereken istasyon yok.</p>'}
+      ${overtimeRows.length > 0 ? `<ul>${overtimeRows}</ul>` : '<p style="font-size:13px">Bu hafta ek mesai gereken istasyon yok.</p>'}
       <h3>Mola payı aşımı (%${allowancePercent} sınırının üzerinde kayıp)</h3>
       ${allowanceBreaches.length > 0 ? `<ul>${allowanceRows}</ul>` : `<p style="font-size:13px">Bu hafta %${allowancePercent} mola payını aşan istasyon yok.</p>`}
       </body></html>`;
@@ -2468,8 +2495,8 @@ function App({ currentUser, onLogout }) {
                             />
                             {(entry.wagonNo || cDay?.job1WagonNo) && (
                               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                <span style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 4, background: entry.job1Status === 'in_progress' ? C.warningBadgeBg : (isJob1Completed ? C.successBadgeBg : `${C.line}22`), color: entry.job1Status === 'in_progress' ? C.copper : (isJob1Completed ? C.good : C.line), border: `1px solid ${entry.job1Status === 'in_progress' ? C.warningBadgeBorder : (isJob1Completed ? C.successBadgeBorder : `${C.line}44`)}`, fontWeight: 600, whiteSpace: 'nowrap' }}>
-                                  {entry.job1Status === 'in_progress' ? '⏳ Devam' : (isJob1Completed ? '✓ Bitti' : 'İşlemde')}
+                                <span style={{ fontSize: 10.5, padding: '2px 7px', borderRadius: 4, background: cDay?.job1Status === 'in_progress' ? C.warningBadgeBg : (isJob1Completed ? C.successBadgeBg : `${C.line}22`), color: cDay?.job1Status === 'in_progress' ? C.copper : (isJob1Completed ? C.good : C.line), border: `1px solid ${cDay?.job1Status === 'in_progress' ? C.warningBadgeBorder : (isJob1Completed ? C.successBadgeBorder : `${C.line}44`)}`, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                  {cDay?.job1Status === 'in_progress' ? '⏳ Devam' : (isJob1Completed ? '✓ Bitti' : 'İşlemde')}
                                 </span>
                                 <button
                                   onClick={() => setSelectedWagonDetail((entry.wagonNo || cDay?.job1WagonNo).trim())}
@@ -2661,11 +2688,11 @@ function App({ currentUser, onLogout }) {
                               
                               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                                 <button
-                                  onClick={() => updateEntry(selectedKey, s.id, 'job1Status', entry.job1Status === 'in_progress' ? 'completed' : 'in_progress')}
+                                  onClick={() => updateEntry(selectedKey, s.id, 'job1Status', cDay?.job1Status === 'in_progress' ? 'completed' : 'in_progress')}
                                   style={{
-                                    background: entry.job1Status === 'in_progress' ? C.warningBadgeBg : C.successBadgeBg,
-                                    border: `1px solid ${entry.job1Status === 'in_progress' ? C.warningBadgeBorder : C.successBadgeBorder}`,
-                                    color: entry.job1Status === 'in_progress' ? C.copper : C.good,
+                                    background: cDay?.job1Status === 'in_progress' ? C.warningBadgeBg : C.successBadgeBg,
+                                    border: `1px solid ${cDay?.job1Status === 'in_progress' ? C.warningBadgeBorder : C.successBadgeBorder}`,
+                                    color: cDay?.job1Status === 'in_progress' ? C.copper : C.good,
                                     fontSize: 10.5,
                                     padding: '3px 8px',
                                     borderRadius: 4,
@@ -2674,7 +2701,7 @@ function App({ currentUser, onLogout }) {
                                   }}
                                   title="İş bittiyse 'Tamamlandı', yarına/haftasonuna devredecekse 'Devam Ediyor' seçin"
                                 >
-                                  {entry.job1Status === 'in_progress' ? '⏳ Devam Ediyor' : '✓ Tamamlandı'}
+                                  {cDay?.job1Status === 'in_progress' ? '⏳ Devam Ediyor' : '✓ Tamamlandı'}
                                 </button>
                               </div>
                             </div>
@@ -2712,7 +2739,7 @@ function App({ currentUser, onLogout }) {
                               </div>
                             )}
 
-                            {entry.job1Status === 'in_progress' && cDay?.job1Remainder > 0.05 && (
+                            {cDay?.job1Status === 'in_progress' && cDay?.job1Remainder > 0.05 && (
                               <div style={{ fontSize: 11, color: C.copper, fontFamily: "'JetBrains Mono', monospace", marginTop: 4, fontWeight: 600 }}>
                                 ⏳ Devredecek kalan iş: {cDay.job1Remainder.toFixed(1)} a-s
                               </div>
@@ -2751,11 +2778,11 @@ function App({ currentUser, onLogout }) {
                                 
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                   <button
-                                    onClick={() => updateEntry(selectedKey, s.id, 'secondJobStatus', entry.secondJobStatus === 'in_progress' ? 'completed' : 'in_progress')}
+                                    onClick={() => updateEntry(selectedKey, s.id, 'secondJobStatus', cDay?.job2Status === 'in_progress' ? 'completed' : 'in_progress')}
                                     style={{
-                                      background: entry.secondJobStatus === 'in_progress' ? C.warningBadgeBg : C.successBadgeBg,
-                                      border: `1px solid ${entry.secondJobStatus === 'in_progress' ? C.warningBadgeBorder : C.successBadgeBorder}`,
-                                      color: entry.secondJobStatus === 'in_progress' ? C.copper : C.good,
+                                      background: cDay?.job2Status === 'in_progress' ? C.warningBadgeBg : C.successBadgeBg,
+                                      border: `1px solid ${cDay?.job2Status === 'in_progress' ? C.warningBadgeBorder : C.successBadgeBorder}`,
+                                      color: cDay?.job2Status === 'in_progress' ? C.copper : C.good,
                                       fontSize: 10.5,
                                       padding: '2px 6px',
                                       borderRadius: 4,
@@ -2763,7 +2790,7 @@ function App({ currentUser, onLogout }) {
                                       fontWeight: 600
                                     }}
                                   >
-                                    {entry.secondJobStatus === 'in_progress' ? '⏳ Devam Ediyor' : '✓ Tamamlandı'}
+                                    {cDay?.job2Status === 'in_progress' ? '⏳ Devam Ediyor' : '✓ Tamamlandı'}
                                   </button>
                                   
                                   <button
@@ -2817,8 +2844,8 @@ function App({ currentUser, onLogout }) {
                                 />
                                 {entry.secondJobWagonNo && (
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                    <span style={{ fontSize: 10, padding: '2px 5px', borderRadius: 4, background: entry.secondJobStatus === 'in_progress' ? C.warningBadgeBg : (isJob2Completed ? C.successBadgeBg : `${C.line}22`), color: entry.secondJobStatus === 'in_progress' ? C.secondJobWagonText : (isJob2Completed ? C.good : C.line), border: `1px solid ${entry.secondJobStatus === 'in_progress' ? C.secondJobWagonBorder : (isJob2Completed ? C.successBadgeBorder : `${C.line}44`)}`, fontWeight: 600, whiteSpace: 'nowrap' }}>
-                                      {entry.secondJobStatus === 'in_progress' ? '⏳ Devam' : (isJob2Completed ? '✓ Bitti' : 'İşlemde')}
+                                    <span style={{ fontSize: 10, padding: '2px 5px', borderRadius: 4, background: cDay?.job2Status === 'in_progress' ? C.warningBadgeBg : (isJob2Completed ? C.successBadgeBg : `${C.line}22`), color: cDay?.job2Status === 'in_progress' ? C.secondJobWagonText : (isJob2Completed ? C.good : C.line), border: `1px solid ${cDay?.job2Status === 'in_progress' ? C.secondJobWagonBorder : (isJob2Completed ? C.successBadgeBorder : `${C.line}44`)}`, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                      {cDay?.job2Status === 'in_progress' ? '⏳ Devam' : (isJob2Completed ? '✓ Bitti' : 'İşlemde')}
                                     </span>
                                     <button
                                       onClick={() => setSelectedWagonDetail(entry.secondJobWagonNo.trim())}
@@ -2853,7 +2880,7 @@ function App({ currentUser, onLogout }) {
                                 </div>
                               </div>
 
-                              {entry.secondJobStatus === 'in_progress' && cDay?.job2Remainder > 0.05 && (
+                              {cDay?.job2Status === 'in_progress' && cDay?.job2Remainder > 0.05 && (
                                 <div style={{ fontSize: 11, color: C.secondJobHeader, fontFamily: "'JetBrains Mono', monospace", marginTop: 6, fontWeight: 600 }}>
                                   ↷ 2. İşten devredecek: {cDay.job2Remainder.toFixed(1)} a-s
                                 </div>
@@ -2978,7 +3005,7 @@ function App({ currentUser, onLogout }) {
                             </div>
                           )}
 
-                          {(lossHours > 0.05 || entry.job1Status === 'in_progress' || entry.downtimeReason) && (
+                          {(lossHours > 0.05 || cDay?.job1Status === 'in_progress' || entry.downtimeReason) && (
                             <div style={{ marginTop: 8, padding: '7px 9px', background: C.warningBadgeBg, border: `1px solid ${C.warningBadgeBorder}`, borderRadius: 6 }}>
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                                 <span style={{ fontSize: 10.5, fontWeight: 700, color: C.copper, display: 'flex', alignItems: 'center', gap: 4 }}>
