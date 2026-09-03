@@ -105,7 +105,6 @@ const auth = window.__auth;
 const DAY_NAMES = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
 const MONTHS = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
 
-// ADIM 2: STANDART DURUŞ / KAYIP NEDENLERİ TANIMLARI (PARETO)
 const DOWNTIME_REASONS = [
   { id: 'malzeme', label: '📦 Malzeme / Sac / Profil Bekleme', short: 'Malzeme Bekleme', color: '#F59E0B' },
   { id: 'ariza', label: '⚙️ Fikstür / Kaynak Makinesi Arızası', short: 'Makine Arızası', color: '#EF4444' },
@@ -123,19 +122,19 @@ function getDowntimeInfo(id) {
 const THEMES = {
   light: {
     name: 'light',
-    page: '#F3F4F6',          // Windows 11 light desktop/canvas
-    panel: '#FFFFFF',         // Fluent card surface
-    panelAlt: '#F8FAFC',      // Sub-card background
-    border: '#E2E8F0',        // Subtle Fluent border
-    line: '#0067C0',          // Windows 11 Fluent Blue (signature accent)
-    paper: '#0F172A',         // Primary text (slate-900)
-    dim: '#64748B',           // Muted secondary text (slate-500)
-    copper: '#B45309',        // Soft amber
-    good: '#0F7B0F',          // Fluent success green
-    bad: '#C42B1C',           // Fluent error crimson
-    weekend: '#6366F1',       // Soft indigo/purple
-    groupA: '#0067C0',        // Taşlama
-    groupB: '#7C3AED',        // Kaynak-Montaj
+    page: '#F3F4F6',
+    panel: '#FFFFFF',
+    panelAlt: '#F8FAFC',
+    border: '#E2E8F0',
+    line: '#0067C0',
+    paper: '#0F172A',
+    dim: '#64748B',
+    copper: '#B45309',
+    good: '#0F7B0F',
+    bad: '#C42B1C',
+    weekend: '#6366F1',
+    groupA: '#0067C0',
+    groupB: '#7C3AED',
     wagonBox: '#F0F9FF',
     wagonBorder: '#BAE6FD',
     wagonText: '#0369A1',
@@ -190,19 +189,19 @@ const THEMES = {
   },
   dark: {
     name: 'dark',
-    page: '#0E1520',          // Dark canvas
-    panel: '#131B26',         // Dark card surface
-    panelAlt: '#182230',      // Dark sub-card
-    border: '#233142',        // Dark border
-    line: '#38BDF8',          // Neon cyan accent
-    paper: '#F1F5F9',         // Light paper text
-    dim: '#94A3B8',           // Muted text
-    copper: '#F59E0B',        // Bright amber
-    good: '#10B981',          // Emerald green
-    bad: '#F43F5E',           // Rose red
-    weekend: '#818CF8',       // Indigo purple
-    groupA: '#38BDF8',        // Taşlama
-    groupB: '#A78BFA',        // Kaynak-Montaj
+    page: '#0E1520',
+    panel: '#131B26',
+    panelAlt: '#182230',
+    border: '#233142',
+    line: '#38BDF8',
+    paper: '#F1F5F9',
+    dim: '#94A3B8',
+    copper: '#F59E0B',
+    good: '#10B981',
+    bad: '#F43F5E',
+    weekend: '#818CF8',
+    groupA: '#38BDF8',
+    groupB: '#A78BFA',
     wagonBox: '#0B0F17',
     wagonBorder: '#233142',
     wagonText: '#38BDF8',
@@ -391,6 +390,33 @@ function workMinutesBetween(startMin, endMin, blocks) {
   return total;
 }
 
+// CANLI İLERLEME YÜZDESİ HESAPLAMA MOTORU (BAŞLANGIÇ - GÜNCEL SAAT - TEORİK BİTİŞ)
+function calcLiveProgress(startMin, finishMin, isDone, nowMin) {
+  if (isDone) {
+    return { percent: 100, label: '%100 (Tamamlandı)', status: 'done', color: '#10B981' };
+  }
+  if (startMin == null || finishMin == null) {
+    return { percent: null, label: '—', status: 'unknown', color: '#64748B' };
+  }
+  if (nowMin < startMin) {
+    return { percent: 0, label: '%0 (Henüz Başlamadı)', status: 'not_started', color: '#64748B' };
+  }
+  if (nowMin >= finishMin) {
+    return { percent: 100, label: '%100 (Teorik Süre Doldu)', status: 'due', color: '#F59E0B' };
+  }
+
+  const totalNet = workMinutesBetween(startMin, finishMin, ALL_BLOCKS) || Math.max(finishMin - startMin, 1);
+  const elapsedNet = workMinutesBetween(startMin, nowMin, ALL_BLOCKS);
+  const pct = Math.min(Math.max(Math.round((elapsedNet / totalNet) * 100), 1), 99);
+
+  return {
+    percent: pct,
+    label: `%${pct} İşlemde`,
+    status: 'in_progress',
+    color: pct >= 80 ? '#38BDF8' : (pct >= 40 ? '#0067C0' : '#B45309')
+  };
+}
+
 function getMonday(d) {
   const date = new Date(d);
   const day = date.getDay();
@@ -466,19 +492,19 @@ function usernameToEmail(username) {
   return `${clean || 'kullanici'}@verim-panosu.local`;
 }
 
-// ADIM 1: VAGON DETAY & SÜREÇ MODALI
-function WagonDetailModal({ wagon, onClose }) {
+// VAGON DETAY & SÜREÇ MODALI (CANLI İLERLEME YÜZDESİ ENTEGRELİ)
+function WagonDetailModal({ wagon, nowMin, onClose }) {
   const { C } = useTheme();
   if (!wagon) return null;
 
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: C.modalOverlay, backdropFilter: 'blur(5px)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ background: C.modalCardBg, border: `1px solid ${C.border}`, borderRadius: 12, width: '100%', maxWidth: 680, maxHeight: '90vh', overflowY: 'auto', padding: 24, boxShadow: C.cardShadow }}>
+      <div style={{ background: C.modalCardBg, border: `1px solid ${C.border}`, borderRadius: 12, width: '100%', maxWidth: 700, maxHeight: '90vh', overflowY: 'auto', padding: 24, boxShadow: C.cardShadow }}>
         
         {/* Modal Başlığı */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, borderBottom: `1px solid ${C.border}`, paddingBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 36, height: 36, borderRadius: 8, background: 'linear-gradient(135deg, #0078D4, #005A9E)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 18 }}>🚆</div>
+            <div style={{ width: 38, height: 38, borderRadius: 8, background: 'linear-gradient(135deg, #0078D4, #005A9E)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 18 }}>🚆</div>
             <div>
               <div style={{ fontSize: 18, fontWeight: 700, color: C.paper }}>Vagon: #{wagon.wagonNo}</div>
               <div style={{ fontSize: 12, color: C.dim }}>Haftalık Üretim & Hat Süreci Yolculuğu</div>
@@ -515,14 +541,16 @@ function WagonDetailModal({ wagon, onClose }) {
           </div>
         </div>
 
-        {/* Kronolojik Süreç Adımları (Timeline Stepper) */}
+        {/* Kronolojik Süreç Adımları (Timeline Stepper) & Canlı İlerleme Çubukları */}
         <div style={{ fontSize: 12, fontWeight: 700, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>
-          İstasyon Bazlı Süreç ve İşlemler
+          İstasyon Bazlı Süreç ve Canlı İlerleme
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {wagon.steps.map((step, idx) => {
             const dtInfo = getDowntimeInfo(step.downtimeReason);
+            const liveProg = calcLiveProgress(step.startMin, step.finishMin, step.isDone, nowMin);
+
             return (
               <div key={idx} style={{ background: C.panelAlt, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
@@ -538,6 +566,25 @@ function WagonDetailModal({ wagon, onClose }) {
                   <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 4, background: step.isDone ? C.successBadgeBg : C.warningBadgeBg, color: step.isDone ? C.good : C.copper, border: `1px solid ${step.isDone ? C.successBadgeBorder : C.warningBadgeBorder}` }}>
                     {step.isDone ? '✓ Tamamlandı' : '⏳ Devam Ediyor'}
                   </span>
+                </div>
+
+                {/* CANLI İLERLEME ÇUBUĞU (PROGRESS BAR) */}
+                <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5, marginBottom: 5 }}>
+                    <span style={{ fontWeight: 600, color: C.paper, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>⏱️ İş İlerlemesi:</span>
+                      <strong style={{ color: liveProg.color }}>{liveProg.label}</strong>
+                    </span>
+                    <span style={{ fontSize: 11, color: C.dim, fontFamily: "'JetBrains Mono', monospace" }}>
+                      Başlama: <strong>{minToTime(step.startMin)}</strong> → Teorik Bitiş: <strong>{minToTime(step.finishMin)}</strong>
+                    </span>
+                  </div>
+
+                  {liveProg.percent != null && (
+                    <div style={{ height: 8, background: C.trackBg, borderRadius: 4, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${liveProg.percent}%`, background: liveProg.color, borderRadius: 4, transition: 'width 0.4s ease' }} />
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, fontSize: 12, color: C.dim, borderTop: `1px solid ${C.border}`, paddingTop: 8 }}>
@@ -572,11 +619,10 @@ function WagonDetailModal({ wagon, onClose }) {
   );
 }
 
-// ADIM 4: YÖNETİCİ GRAFİKLERİ VE KPI BİLEŞENLERİ (SVG REAKTİF)
+// YÖNETİCİ GRAFİKLERİ VE KPI BİLEŞENLERİ (SVG REAKTİF)
 function TrendChart({ weekDates, data, carryoverMap, stations }) {
   const { C } = useTheme();
 
-  // Her gün için ortalama verim hesaplama
   const dailyEffs = useMemo(() => {
     return weekDates.map((d, i) => {
       let sum = 0, count = 0;
@@ -607,7 +653,6 @@ function TrendChart({ weekDates, data, carryoverMap, stations }) {
       </div>
 
       <svg width="100%" height={chartHeight} viewBox={`0 0 500 ${chartHeight}`} style={{ overflow: 'visible' }}>
-        {/* Kılavuz Çizgileri */}
         <line x1="40" y1="30" x2="490" y2="30" stroke={C.chartGrid} strokeDasharray="3 3" />
         <text x="32" y="34" fill={C.chartText} fontSize="10" textAnchor="end">100%</text>
 
@@ -617,13 +662,11 @@ function TrendChart({ weekDates, data, carryoverMap, stations }) {
         <line x1="40" y1="135" x2="490" y2="135" stroke={C.border} />
         <text x="32" y="139" fill={C.chartText} fontSize="10" textAnchor="end">0%</text>
 
-        {/* 100% Hedef Çizgisi */}
         {(() => {
           const targetY = 135 - (100 / maxVal) * 105;
           return <line x1="40" y1={targetY} x2="490" y2={targetY} stroke={C.good} strokeWidth="1.5" strokeDasharray="4 4" />;
         })()}
 
-        {/* Çubuklar */}
         {dailyEffs.map((val, idx) => {
           const x = 70 + idx * 60;
           const barHeight = val > 0 ? (val / maxVal) * 105 : 2;
@@ -796,12 +839,20 @@ function App({ currentUser, onLogout }) {
   const [showWeekendModal, setShowWeekendModal] = useState(false);
   const [lastEdit, setLastEdit] = useState(null);
   
-  // YENİ ÖZELLİKLER İÇİN DURUM (STATE) DEĞİŞKENLERİ
-  const [mainView, setMainView] = useState('dashboard'); // 'dashboard' | 'wagons' | 'analytics'
+  const [mainView, setMainView] = useState('dashboard');
   const [selectedWagonDetail, setSelectedWagonDetail] = useState(null);
   const [wagonSearchQuery, setWagonSearchQuery] = useState('');
-  const [wagonStatusFilter, setWagonStatusFilter] = useState('all'); // 'all' | 'in_progress' | 'completed'
+  const [wagonStatusFilter, setWagonStatusFilter] = useState('all');
   
+  // CANLI ZAMANLAYICI (HER 30 SANİYEDE GÜNCEL FABRİKA SAATİNİ GÜNCEL TUTAR)
+  const [currentWallTime, setCurrentWallTime] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentWallTime(new Date()), 30000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const nowMin = currentWallTime.getHours() * 60 + currentWallTime.getMinutes();
+
   const pendingWrites = useRef({});
   const username = currentUser?.displayName || currentUser?.email || 'Bilinmeyen';
 
@@ -837,16 +888,19 @@ function App({ currentUser, onLogout }) {
         const batch = db.batch();
         DEFAULT_STATIONS.forEach((d, i) => {
           const id = 'seed_' + Date.now().toString(36) + '_' + i;
-          batch.set(db.collection('stations').doc(id), { name: d.name, group: d.group, standardHours: d.standardHours, active: true });
+          batch.set(db.collection('stations').doc(id), { name: d.name, group: d.group, standardHours: d.standardHours, active: true, order: i });
         });
         batch.commit().catch((e) => console.error('Tohumlama hatası', e));
       } else if (stations.length > 0) {
         const existingNames = new Set(stations.map((s) => s.name.trim().toLowerCase()));
         DEFAULT_STATIONS.filter((d) => !existingNames.has(d.name.trim().toLowerCase())).forEach((d, i) => {
           const id = 'seed_' + Date.now().toString(36) + '_' + i;
-          db.collection('stations').doc(id).set({ name: d.name, group: d.group, standardHours: d.standardHours, active: true }).catch(() => {});
+          db.collection('stations').doc(id).set({ name: d.name, group: d.group, standardHours: d.standardHours, active: true, order: 900 + i }).catch(() => {});
         });
       }
+
+      // İstasyonları tanımlanmış "order" sırasına göre diz
+      stations.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
       setData((prev) => ({ ...prev, stations }));
     }, (err) => { console.error('İstasyon senkron hatası', err); setConnected(false); });
 
@@ -894,10 +948,30 @@ function App({ currentUser, onLogout }) {
     const name = newStation.trim();
     if (!name) return;
     const id = 'st_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    const st = { id, name, group: newGroup, standardHours: newStandard === '' ? null : parseFloat(newStandard), active: true };
+    const newOrder = data.stations.length;
+    const st = { id, name, group: newGroup, standardHours: newStandard === '' ? null : parseFloat(newStandard), active: true, order: newOrder };
     setData((prev) => ({ ...prev, stations: [...prev.stations, st] }));
-    db.collection('stations').doc(id).set({ name: st.name, group: st.group, standardHours: st.standardHours, active: true }).then(() => recordActivity()).catch((e) => console.error('Yazma hatası', e));
+    db.collection('stations').doc(id).set(st).then(() => recordActivity()).catch((e) => console.error('Yazma hatası', e));
     setNewStation(''); setNewStandard('');
+  }
+
+  // İSTASYON SIRALAMASINI KAYDIRMA FONKSİYONU (YUKARI / AŞAĞI)
+  function moveStation(index, direction) {
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= data.stations.length) return;
+
+    const reordered = [...data.stations];
+    const [moved] = reordered.splice(index, 1);
+    reordered.splice(targetIndex, 0, moved);
+
+    const updated = reordered.map((s, idx) => ({ ...s, order: idx }));
+    setData((prev) => ({ ...prev, stations: updated }));
+
+    const batch = db.batch();
+    updated.forEach((s) => {
+      batch.update(db.collection('stations').doc(s.id), { order: s.order });
+    });
+    batch.commit().then(() => recordActivity()).catch((err) => console.error('Sıralama kaydetme hatası', err));
   }
 
   function toggleStationActive(id, currentStatus) {
@@ -937,7 +1011,6 @@ function App({ currentUser, onLogout }) {
     const absentStaff = parseFloat(merged.absentStaff) || 0;
     const present = Math.max(totalStaff - absentStaff, 0);
 
-    // 1. İş gerçekleşen a-s
     if (merged.actualEndTime && !merged.isIdle) {
       const startMin = timeToMin(merged.startTime) ?? SHIFT_START_MIN;
       const endMin = timeToMin(merged.actualEndTime);
@@ -949,7 +1022,6 @@ function App({ currentUser, onLogout }) {
       patch.actual = '';
     }
 
-    // 2. İş gerçekleşen a-s
     if (merged.hasSecondJob && merged.secondJobActualEndTime && !merged.isIdle) {
       const startMin2 = timeToMin(merged.secondJobStartTime) ?? (timeToMin(merged.actualEndTime) || SHIFT_START_MIN);
       const endMin2 = timeToMin(merged.secondJobActualEndTime);
@@ -1254,7 +1326,7 @@ function App({ currentUser, onLogout }) {
         const avgPresent = presentDays > 0 ? presentSum / presentDays : 0;
         const wagonsList = Object.values(wagonStatusMap);
         return { ...s, avg: count > 0 ? sum / count : null, totalActual, totalStandardExpected, lossTotal, lossPercentAvg, totalCapacityShortfall, totalAbsent, totalLost, avgPresent, days: count, idleDays, wagonsList, dayDetails: carryoverMap[s.id] || [] };
-      }).sort((a, b) => { if (a.avg === null) return 1; if (b.avg === null) return -1; return b.avg - a.avg; });
+      });
   }, [data, weekDates, shiftHours, carryoverMap, showInactiveStations]);
 
   const weekAvg = useMemo(() => {
@@ -1276,7 +1348,6 @@ function App({ currentUser, onLogout }) {
   const absenteeismTotal = useMemo(() => stationSummaries.filter((s) => s.active !== false).reduce((acc, s) => ({ persons: acc.persons + s.totalAbsent, hours: acc.hours + s.totalLost }), { persons: 0, hours: 0 }), [stationSummaries]);
   const lossTotal = useMemo(() => stationSummaries.filter((s) => s.active !== false).reduce((acc, s) => acc + (s.lossTotal != null && s.lossTotal > 0 ? s.lossTotal : 0), 0), [stationSummaries]);
 
-  // ADIM 2: DURUŞ VE KAYIP NEDENLERİ HAFTALIK ÖZETİ (PARETO)
   const downtimeSummary = useMemo(() => {
     const stats = {};
     DOWNTIME_REASONS.forEach(r => {
@@ -1316,7 +1387,7 @@ function App({ currentUser, onLogout }) {
     return { list, totalDowntimeHours };
   }, [data, weekDates, carryoverMap]);
 
-  // ADIM 1: TÜM VAGONLARIN HAFTALIK YAŞAM DÖNGÜSÜ KATALOĞU (WAGON MATRIX)
+  // VAGON YAŞAM DÖNGÜSÜ & CANLI İLERLEME YÜZDESİ HESAPLAMA
   const wagonsCatalog = useMemo(() => {
     const map = {};
 
@@ -1329,6 +1400,10 @@ function App({ currentUser, onLogout }) {
         const e = data.entries[`${dKey}|${s.id}`];
         if (!e || e.isIdle) return;
         const cInfo = carryoverMap[s.id]?.[i];
+
+        const totalStaff = parseFloat(e.totalStaff) || 0;
+        const absentStaff = parseFloat(e.absentStaff) || 0;
+        const presentStaff = Math.max(totalStaff - absentStaff, 0);
 
         // 1. İş Vagonu
         const w1 = (e.wagonNo || cInfo?.job1WagonNo || '').trim();
@@ -1349,6 +1424,11 @@ function App({ currentUser, onLogout }) {
           const isDone = (e.job1Status !== 'in_progress') && (e.actualEndTime != null);
           const j1StatusText = e.job1Status === 'in_progress' ? 'Devam Ediyor' : (isDone ? 'Tamamlandı' : 'Başlandı');
           
+          const startMin1 = timeToMin(e.startTime) ?? SHIFT_START_MIN;
+          const neededMin1 = stageRequiredMinutes(j1Std, presentStaff);
+          const est1 = neededMin1 != null ? estimateWithDecision(startMin1, neededMin1, e.overtimeDecision, i) : null;
+          const finishMin1 = est1 ? est1.finishMin : (timeToMin(e.actualEndTime) || SHIFT_END_MIN);
+
           map[w1].steps.push({
             day: dayName,
             dateStr: dFormatted,
@@ -1358,6 +1438,8 @@ function App({ currentUser, onLogout }) {
             jobName: '1. İş',
             standard: j1Std,
             actual: j1Act,
+            startMin: startMin1,
+            finishMin: finishMin1,
             startTime: e.startTime,
             endTime: e.actualEndTime,
             status: j1StatusText,
@@ -1390,6 +1472,11 @@ function App({ currentUser, onLogout }) {
             const isDone2 = (e.secondJobStatus !== 'in_progress') && (e.secondJobActualEndTime != null);
             const j2StatusText = e.secondJobStatus === 'in_progress' ? 'Devam Ediyor' : (isDone2 ? 'Tamamlandı' : 'Başlandı');
 
+            const startMin2 = timeToMin(e.secondJobStartTime) ?? (timeToMin(e.actualEndTime) || SHIFT_START_MIN);
+            const neededMin2 = stageRequiredMinutes(j2Std, presentStaff);
+            const est2 = neededMin2 != null ? estimateWithDecision(startMin2, neededMin2, e.overtimeDecision, i) : null;
+            const finishMin2 = est2 ? est2.finishMin : (timeToMin(e.secondJobActualEndTime) || SHIFT_END_MIN);
+
             map[w2].steps.push({
               day: dayName,
               dateStr: dFormatted,
@@ -1399,6 +1486,8 @@ function App({ currentUser, onLogout }) {
               jobName: '2. İş',
               standard: j2Std,
               actual: j2Act,
+              startMin: startMin2,
+              finishMin: finishMin2,
               startTime: e.secondJobStartTime,
               endTime: e.secondJobActualEndTime,
               status: j2StatusText,
@@ -1416,16 +1505,21 @@ function App({ currentUser, onLogout }) {
 
     return Object.values(map).map(w => {
       const overallEff = calcEff(w.totalActual, w.totalStandard);
+      
+      // Vagonun en son aktif iş adımı için canlı ilerleme
+      const lastStep = w.steps[w.steps.length - 1];
+      const liveProg = lastStep ? calcLiveProgress(lastStep.startMin, lastStep.finishMin, lastStep.isDone, nowMin) : null;
+
       return {
         ...w,
         stationsCount: w.stationsSet.size,
         stationsList: Array.from(w.stationsSet),
-        overallEff
+        overallEff,
+        liveProg
       };
     }).sort((a, b) => a.wagonNo.localeCompare(b.wagonNo, undefined, { numeric: true }));
-  }, [data, weekDates, carryoverMap]);
+  }, [data, weekDates, carryoverMap, nowMin]);
 
-  // Filtrelenmiş Vagon Listesi (Arama ve Duruma göre)
   const filteredWagons = useMemo(() => {
     return wagonsCatalog.filter(w => {
       const matchesSearch = !wagonSearchQuery.trim() || w.wagonNo.toLowerCase().includes(wagonSearchQuery.trim().toLowerCase()) || w.stationsList.some(st => st.toLowerCase().includes(wagonSearchQuery.trim().toLowerCase()));
@@ -1434,15 +1528,16 @@ function App({ currentUser, onLogout }) {
     });
   }, [wagonsCatalog, wagonSearchQuery, wagonStatusFilter]);
 
-  // Seçili vagon detay nesnesi
   const currentWagonDetailObj = useMemo(() => {
     if (!selectedWagonDetail) return null;
     return wagonsCatalog.find(w => w.wagonNo === selectedWagonDetail) || null;
   }, [wagonsCatalog, selectedWagonDetail]);
 
-  // ADIM 4: HAFTANIN EN BAŞARILI 3 İSTASYONU (YILDIZLAR)
   const topStations = useMemo(() => {
-    return stationSummaries.filter(s => s.active !== false && s.avg !== null).slice(0, 3);
+    return [...stationSummaries]
+      .filter(s => s.active !== false && s.avg !== null)
+      .sort((a, b) => b.avg - a.avg)
+      .slice(0, 3);
   }, [stationSummaries]);
 
   function printReport() {
@@ -1591,7 +1686,7 @@ function App({ currentUser, onLogout }) {
     <div style={{ minHeight: '100vh', padding: '20px 16px 56px' }}>
       <div style={{ maxWidth: 1040, margin: '0 auto' }}>
 
-        {/* Ust Baslik Blogu */}
+        {/* Üst Başlık Bloğu */}
         <div style={{ border: `1px solid ${C.border}`, background: C.panel, borderRadius: 10, marginBottom: 16, display: 'flex', flexWrap: 'wrap', overflow: 'hidden', boxShadow: C.cardShadow }}>
           <TitleCell label="Proje" minWidth={210}>
             <div style={{ fontWeight: 700, fontSize: 17, color: C.paper }}>İstasyon Verim Panosu</div>
@@ -1628,7 +1723,7 @@ function App({ currentUser, onLogout }) {
           </div>
         </div>
 
-        {/* Kullanici Bilgisi, Hızlı Vagon Arama, Tema Degistir & Haftasonu Mesaisi */}
+        {/* Kullanıcı Bilgisi, Hızlı Vagon Arama, Tema Değiştir & Haftasonu Mesaisi */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 16, fontSize: 12, color: C.dim }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <span>Kullanıcı: <strong style={{ color: C.paper }}>{username}</strong></span>
@@ -1638,7 +1733,7 @@ function App({ currentUser, onLogout }) {
           </div>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            {/* HIZLI VAGON ARAMA ALANI (ADIM 1) */}
+            {/* Hızlı Vagon Arama Alanı */}
             <div style={{ position: 'relative' }}>
               <input
                 type="text"
@@ -1664,7 +1759,7 @@ function App({ currentUser, onLogout }) {
               )}
             </div>
 
-            {/* TEMA DEĞİŞTİRME BUTONU (LIGHT / DARK) */}
+            {/* Tema Değiştirme Butonu */}
             <button
               onClick={toggleTheme}
               style={{
@@ -1710,7 +1805,7 @@ function App({ currentUser, onLogout }) {
           </div>
         </div>
 
-        {/* ANA GÖRÜNÜM SEÇİCİ SEKMELERİ (DASHBOARD / WAGONS / ANALYTICS) */}
+        {/* Ana Görünüm Sekmeleri */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 18, background: C.tabStripBg, padding: 4, borderRadius: 10, border: `1px solid ${C.border}` }}>
           <button
             onClick={() => setMainView('dashboard')}
@@ -1782,7 +1877,7 @@ function App({ currentUser, onLogout }) {
           </button>
         </div>
 
-        {/* HAFTASONU MESAİSİ BİLGİLENDİRME & HIZLI ERİŞİM MODALI */}
+        {/* Haftasonu Modalı */}
         {showWeekendModal && (
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: C.modalOverlay, backdropFilter: 'blur(4px)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
             <div style={{ background: C.modalCardBg, border: `1px solid ${C.border}`, borderRadius: 12, width: '100%', maxWidth: 520, padding: 24, boxShadow: C.cardShadow }}>
@@ -1823,18 +1918,18 @@ function App({ currentUser, onLogout }) {
           </div>
         )}
 
-        {/* VAGON DETAY MODALI (ADIM 1) */}
+        {/* Vagon Detay Modalı */}
         {selectedWagonDetail && (
-          <WagonDetailModal wagon={currentWagonDetailObj} onClose={() => setSelectedWagonDetail(null)} />
+          <WagonDetailModal wagon={currentWagonDetailObj} nowMin={nowMin} onClose={() => setSelectedWagonDetail(null)} />
         )}
 
-        {/* 1. GÖRÜNÜM: GÜNLÜK İSTASYON PANOSU (MEVCUT PANO) */}
+        {/* 1. GÖRÜNÜM: GÜNLÜK İSTASYON PANOSU */}
         {mainView === 'dashboard' && (
           <>
-            {/* Istasyon Yonetimi */}
+            {/* İstasyon Yönetimi & Sıralama Değiştirme */}
             <div style={{ marginBottom: 20 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.5 }}>İstasyon Tanımları & Standart Saatler</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.5 }}>İstasyon Tanımları & Sıralama (▲ / ▼ ile Kaydır)</span>
                 <button 
                   onClick={() => setShowInactiveStations(!showInactiveStations)} 
                   style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 6, color: showInactiveStations ? C.good : C.dim, fontSize: 11.5, padding: '4px 10px', cursor: 'pointer', fontWeight: 500 }}>
@@ -1843,8 +1938,34 @@ function App({ currentUser, onLogout }) {
               </div>
               <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, boxShadow: C.cardShadow }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
-                  {displayedStations.map((s) => (
+                  {displayedStations.map((s, idx) => (
                     <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: s.active === false ? (theme === 'light' ? '#F1F5F9' : '#0B0F17') : C.panelAlt, border: `1px solid ${C.border}`, borderRadius: 6, padding: '7px 10px', opacity: s.active === false ? 0.6 : 1 }}>
+                      
+                      {/* Sıra Numarası ve Yukarı/Aşağı Kaydırma Butonları */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginRight: 2 }}>
+                        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 700, color: C.dim, width: 22, textAlign: 'center' }}>
+                          {String(idx + 1).padStart(2, '0')}
+                        </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          <button
+                            onClick={() => moveStation(idx, -1)}
+                            disabled={idx === 0}
+                            style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 3, color: idx === 0 ? C.dim : C.paper, cursor: idx === 0 ? 'default' : 'pointer', padding: '1px 5px', fontSize: 9, lineHeight: 1, opacity: idx === 0 ? 0.3 : 1 }}
+                            title="Yukarı Kaydır"
+                          >
+                            ▲
+                          </button>
+                          <button
+                            onClick={() => moveStation(idx, 1)}
+                            disabled={idx === displayedStations.length - 1}
+                            style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 3, color: idx === displayedStations.length - 1 ? C.dim : C.paper, cursor: idx === displayedStations.length - 1 ? 'default' : 'pointer', padding: '1px 5px', fontSize: 9, lineHeight: 1, opacity: idx === displayedStations.length - 1 ? 0.3 : 1 }}
+                            title="Aşağı Kaydır"
+                          >
+                            ▼
+                          </button>
+                        </div>
+                      </div>
+
                       <GroupTag group={s.group} />
                       <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: s.active === false ? C.dim : C.paper }}>
                         {s.name} {s.active === false && <span style={{ fontSize: 11, color: C.bad }}>(Pasif)</span>}
@@ -1877,7 +1998,7 @@ function App({ currentUser, onLogout }) {
               </div>
             </div>
 
-            {/* Gun Sekmeleri */}
+            {/* Gün Sekmeleri */}
             <div style={{ display: 'flex', gap: 6, padding: 4, background: C.tabStripBg, borderRadius: 10, marginBottom: 12, border: `1px solid ${C.border}` }}>
               {weekDates.map((d, i) => {
                 const active = i === dayIndex;
@@ -1908,10 +2029,9 @@ function App({ currentUser, onLogout }) {
               })}
             </div>
 
-            {/* Secili Gunun Panosu */}
+            {/* Seçili Günün Panosu */}
             <div style={{ background: C.panel, border: `1px solid ${isWeekendDay ? (theme === 'light' ? '#C7D2FE' : C.weekend) : C.border}`, borderRadius: 10, padding: 18, marginBottom: 20, boxShadow: C.cardShadow }}>
               
-              {/* Gun Islem Cubugu */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
                 <div style={{ fontSize: 13.5, fontWeight: 600, color: isWeekendDay ? C.weekend : C.paper, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span>{isWeekendDay ? '📅 HAFTASONU MESAİSİ:' : 'Girişler:'}</span>
@@ -1960,13 +2080,11 @@ function App({ currentUser, onLogout }) {
                   const lossPercent = (lossHours != null && totalStandard > 0) ? (lossHours / totalStandard) * 100 : null;
                   const showStatus = hasAnyInput(entry) && !isIdle;
 
-                  // 1. İş Teorik Bitiş Saati
                   const j1StartMin = timeToMin(entry.startTime) ?? SHIFT_START_MIN;
                   const j1Standard = cDay ? cDay.job1Standard : s.standardHours;
                   const j1NeededMin = stageRequiredMinutes(j1Standard, presentStaff);
                   const j1Est = j1NeededMin != null ? estimateWithDecision(j1StartMin, j1NeededMin, entry.overtimeDecision, dayIndex) : null;
 
-                  // 2. İş Teorik Bitiş Saati
                   let j2Est = null;
                   if (entry.hasSecondJob) {
                     const j2StartMin = timeToMin(entry.secondJobStartTime) ?? (timeToMin(entry.actualEndTime) || j1Est?.finishMin || SHIFT_START_MIN);
@@ -1975,18 +2093,15 @@ function App({ currentUser, onLogout }) {
                     j2Est = j2NeededMin != null ? estimateWithDecision(j2StartMin, j2NeededMin, entry.overtimeDecision, dayIndex) : null;
                   }
 
-                  // 1. İş Bitti mi?
                   const actualEndMin = timeToMin(entry.actualEndTime);
                   const isJob1Completed = (entry.job1Status !== 'in_progress') && (actualEndMin != null);
                   const isJob1FinishedWithinShift = isJob1Completed && (actualEndMin <= SHIFT_END_MIN);
 
-                  // 2. İş Bitti mi?
                   const hasJob2 = !!entry.hasSecondJob;
                   const secondActualEndMin = timeToMin(entry.secondJobActualEndTime);
                   const isJob2Completed = hasJob2 && (entry.secondJobStatus !== 'in_progress') && (secondActualEndMin != null);
                   const isJob2FinishedWithinShift = isJob2Completed && (secondActualEndMin <= SHIFT_END_MIN);
 
-                  // Aktif iş ve kartın tamamlanma durumu
                   const isCardFullyFinishedOnTime = hasJob2 ? isJob2FinishedWithinShift : isJob1FinishedWithinShift;
                   const activeEst = hasJob2 ? (isJob2Completed ? null : j2Est) : (isJob1Completed ? null : j1Est);
                   const activeJobName = hasJob2 ? '2. İş' : '1. İş';
@@ -1994,7 +2109,6 @@ function App({ currentUser, onLogout }) {
                   return (
                     <div key={s.id} className={isIdle ? 'idle-card' : ''} style={{ background: isIdle ? C.panelAlt : C.panel, border: `1px solid ${isWeekendDay ? (theme === 'light' ? '#C7D2FE' : C.weekend) : C.border}`, borderRadius: 8, padding: 14, boxShadow: C.cardShadow }}>
                       
-                      {/* Kart Ust Basligi */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                         <span style={{ fontWeight: 600, fontSize: 14, color: C.paper }}>{s.name}</span>
                         
@@ -2055,7 +2169,7 @@ function App({ currentUser, onLogout }) {
                         </div>
                       ) : (
                         <>
-                          {/* Vagon Numarası & Durumu (Tıklanınca Detay Modalı Açar) */}
+                          {/* Vagon Numarası & Durumu */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, background: C.wagonBox, padding: '6px 10px', borderRadius: 6, border: `1px solid ${C.wagonBorder}` }}>
                             <span style={{ fontSize: 11, color: C.wagonText, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
                               <span>🚆</span> Vagon No:
@@ -2093,7 +2207,7 @@ function App({ currentUser, onLogout }) {
                             )}
                           </div>
 
-                          {/* Personel Girisi */}
+                          {/* Personel Girişi */}
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10, background: C.panelAlt, padding: 8, borderRadius: 6, border: `1px solid ${C.border}` }}>
                             <div>
                               <div style={{ fontSize: 10.5, color: C.dim, marginBottom: 3, textAlign: 'center', fontWeight: 500 }}>Mevcut Personel</div>
@@ -2310,7 +2424,7 @@ function App({ currentUser, onLogout }) {
                             </div>
                           )}
 
-                          {/* Toplam Gerçekleşen Ozet */}
+                          {/* Toplam Gerçekleşen Özet */}
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, padding: '6px 10px', background: C.totalBoxBg, border: `1px solid ${C.totalBoxBorder}`, borderRadius: 6 }}>
                             <span style={{ fontSize: 11, color: C.totalBoxText, fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>Günün Toplamı:</span>
                             <span style={{ fontSize: 13, fontWeight: 700, color: C.paper, fontFamily: "'JetBrains Mono', monospace" }}>
@@ -2318,14 +2432,13 @@ function App({ currentUser, onLogout }) {
                             </span>
                           </div>
 
-                          {/* EK MESAİ & HAFTASONU BİLDİRİMLERİ */}
+                          {/* Ek Mesai Bildirimleri */}
                           {isCardFullyFinishedOnTime ? (
                             <div style={{ marginBottom: 8, padding: '6px 10px', background: C.successBadgeBg, border: `1px solid ${C.successBadgeBorder}`, borderRadius: 6, fontSize: 11, color: C.good, display: 'flex', alignItems: 'center', gap: 6, fontWeight: 500 }}>
                               <span>✓</span> İş vardiya içinde (16:55) başarıyla tamamlandı.
                             </div>
                           ) : (
                             <>
-                              {/* CUMA GÜNÜ MESAİ / HAFTASONU KARAR PANELİ */}
                               {dayIndex === 4 && (
                                 <div style={{ marginBottom: 10, background: C.otFridayBg, padding: 10, borderRadius: 6, border: `1px solid ${C.otFridayBorder}` }}>
                                   <div style={{ fontSize: 11, color: C.otFridayText, marginBottom: 6, fontWeight: 600 }}>
@@ -2354,7 +2467,6 @@ function App({ currentUser, onLogout }) {
                                 </div>
                               )}
 
-                              {/* HAFTAİÇİ DİĞER GÜNLER MESAİ PANELİ */}
                               {dayIndex !== 4 && activeEst?.needsDecision && (
                                 <div style={{ marginBottom: 10, background: C.otWeekdayBg, padding: 10, borderRadius: 6, border: `1px solid ${C.otWeekdayBorder}` }}>
                                   <div style={{ fontSize: 11, color: C.otWeekdayText, marginBottom: 6, fontWeight: 600 }}>
@@ -2431,7 +2543,7 @@ function App({ currentUser, onLogout }) {
                             </div>
                           )}
 
-                          {/* ADIM 2: DURUŞ / GECİKME NEDENİ SEÇİCİ */}
+                          {/* Duruş / Gecikme Nedeni Seçici */}
                           {(lossHours > 0.05 || entry.job1Status === 'in_progress' || entry.downtimeReason) && (
                             <div style={{ marginTop: 8, padding: '7px 9px', background: C.warningBadgeBg, border: `1px solid ${C.warningBadgeBorder}`, borderRadius: 6 }}>
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
@@ -2551,7 +2663,7 @@ function App({ currentUser, onLogout }) {
               </div>
             )}
 
-            {/* Grup Toplamlari */}
+            {/* Grup Toplamları */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginBottom: 20 }}>
               <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 18px', boxShadow: C.cardShadow }}>
                 <GroupTag group="taslama" />
@@ -2583,7 +2695,7 @@ function App({ currentUser, onLogout }) {
               </div>
             </div>
 
-            {/* Ek Mesai Gereken Istasyonlar */}
+            {/* Ek Mesai Gereken İstasyonlar */}
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
                 Ek Mesai Gerekebilecek İstasyonlar
@@ -2609,7 +2721,7 @@ function App({ currentUser, onLogout }) {
               )}
             </div>
 
-            {/* Haftalik Ozet Tablosu */}
+            {/* Haftalık Özet Tablosu */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.5 }}>Haftalık Özet — İstasyon Bazlı</span>
               <div style={{ display: 'flex', gap: 8 }}>
@@ -2660,13 +2772,15 @@ function App({ currentUser, onLogout }) {
           </>
         )}
 
-        {/* 2. GÖRÜNÜM: VAGON İZLEME MATRİSİ (ADIM 1) */}
+        {/* 2. GÖRÜNÜM: VAGON İZLEME MATRİSİ (CANLI İLERLEME YÜZDESİ VE DURUMU) */}
         {mainView === 'wagons' && (
           <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 20, boxShadow: C.cardShadow }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
               <div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: C.paper }}>🚆 Vagon İzleme Matrisi & Süreç Takibi</div>
-                <div style={{ fontSize: 12, color: C.dim }}>Bu hafta hat üzerinde işlem gören tüm vagonların aşama ve durum tablosu</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: C.paper }}>🚆 Vagon İzleme Matrisi & Canlı İlerleme Takibi</div>
+                <div style={{ fontSize: 12, color: C.dim }}>
+                  Başlangıç ve teorik bitiş saatine göre hesaplanan anlık tamamlanma yüzdesi (Şu anki fabrika saati: <strong style={{ color: C.line }}>{minToTime(nowMin)}</strong>)
+                </div>
               </div>
 
               {/* Vagon Filtreleri */}
@@ -2703,7 +2817,8 @@ function App({ currentUser, onLogout }) {
                     <tr style={{ borderBottom: `2px solid ${C.border}`, textAlign: 'left' }}>
                       <th style={{ padding: '10px 12px', color: C.dim }}>Vagon No</th>
                       <th style={{ padding: '10px 12px', color: C.dim }}>Başlangıç</th>
-                      <th style={{ padding: '10px 12px', color: C.dim }}>İstasyon Süreci</th>
+                      <th style={{ padding: '10px 12px', color: C.dim }}>İstasyon Süreci & Adımlar</th>
+                      <th style={{ padding: '10px 12px', color: C.dim, minWidth: 160 }}>Canlı İş İlerlemesi</th>
                       <th style={{ padding: '10px 12px', color: C.dim, textAlign: 'right' }}>Toplam a-s</th>
                       <th style={{ padding: '10px 12px', color: C.dim, textAlign: 'center' }}>Verim</th>
                       <th style={{ padding: '10px 12px', color: C.dim, textAlign: 'center' }}>Son Durum</th>
@@ -2711,44 +2826,64 @@ function App({ currentUser, onLogout }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredWagons.map((w) => (
-                      <tr key={w.wagonNo} style={{ borderBottom: `1px solid ${C.border}`, transition: 'background 0.15s' }}>
-                        <td style={{ padding: '12px', fontWeight: 700, color: C.line, fontFamily: "'JetBrains Mono', monospace", fontSize: 13.5 }}>
-                          #{w.wagonNo}
-                        </td>
-                        <td style={{ padding: '12px', color: C.paper, fontWeight: 500 }}>
-                          {w.firstDay}
-                        </td>
-                        <td style={{ padding: '12px' }}>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                            {w.steps.map((st, idx) => (
-                              <span key={idx} style={{ fontSize: 10.5, padding: '2px 6px', borderRadius: 4, background: st.isDone ? C.successBadgeBg : C.warningBadgeBg, color: st.isDone ? C.good : C.copper, border: `1px solid ${st.isDone ? C.successBadgeBorder : C.warningBadgeBorder}`, fontWeight: 600 }}>
-                                {st.stationName} ({st.day})
-                              </span>
-                            ))}
-                          </div>
-                        </td>
-                        <td style={{ padding: '12px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: C.paper }}>
-                          {w.totalActual.toFixed(1)} a-s
-                        </td>
-                        <td style={{ padding: '12px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: effColor(w.overallEff, C) }}>
-                          {w.overallEff != null ? `${Math.round(w.overallEff)}%` : '—'}
-                        </td>
-                        <td style={{ padding: '12px', textAlign: 'center' }}>
-                          <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, background: w.latestStatus === 'Tamamlandı' ? C.successBadgeBg : C.warningBadgeBg, color: w.latestStatus === 'Tamamlandı' ? C.good : C.copper, border: `1px solid ${w.latestStatus === 'Tamamlandı' ? C.successBadgeBorder : C.warningBadgeBorder}`, fontWeight: 600 }}>
-                            {w.latestStatus}
-                          </span>
-                        </td>
-                        <td style={{ padding: '12px', textAlign: 'right' }}>
-                          <button
-                            onClick={() => setSelectedWagonDetail(w.wagonNo)}
-                            style={{ background: C.headerBtnBg, border: `1px solid ${C.border}`, borderRadius: 6, color: C.line, padding: '4px 10px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}
-                          >
-                            Detay ➔
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {filteredWagons.map((w) => {
+                      const prog = w.liveProg || { percent: null, label: '—', color: C.dim };
+                      return (
+                        <tr key={w.wagonNo} style={{ borderBottom: `1px solid ${C.border}`, transition: 'background 0.15s' }}>
+                          <td style={{ padding: '12px', fontWeight: 700, color: C.line, fontFamily: "'JetBrains Mono', monospace", fontSize: 13.5 }}>
+                            #{w.wagonNo}
+                          </td>
+                          <td style={{ padding: '12px', color: C.paper, fontWeight: 500 }}>
+                            {w.firstDay}
+                          </td>
+                          <td style={{ padding: '12px' }}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                              {w.steps.map((st, idx) => (
+                                <span key={idx} style={{ fontSize: 10.5, padding: '2px 6px', borderRadius: 4, background: st.isDone ? C.successBadgeBg : C.warningBadgeBg, color: st.isDone ? C.good : C.copper, border: `1px solid ${st.isDone ? C.successBadgeBorder : C.warningBadgeBorder}`, fontWeight: 600 }}>
+                                  {st.stationName} ({st.day})
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+
+                          {/* CANLI İLERLEME YÜZDESİ VE ÇUBUĞU */}
+                          <td style={{ padding: '12px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: prog.color }}>
+                                <span>{prog.label}</span>
+                              </div>
+                              {prog.percent != null ? (
+                                <div style={{ height: 6, background: C.trackBg, borderRadius: 3, overflow: 'hidden' }}>
+                                  <div style={{ height: '100%', width: `${prog.percent}%`, background: prog.color, borderRadius: 3, transition: 'width 0.4s ease' }} />
+                                </div>
+                              ) : (
+                                <span style={{ fontSize: 11, color: C.dim }}>Hesaplanıyor</span>
+                              )}
+                            </div>
+                          </td>
+
+                          <td style={{ padding: '12px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: C.paper }}>
+                            {w.totalActual.toFixed(1)} a-s
+                          </td>
+                          <td style={{ padding: '12px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: effColor(w.overallEff, C) }}>
+                            {w.overallEff != null ? `${Math.round(w.overallEff)}%` : '—'}
+                          </td>
+                          <td style={{ padding: '12px', textAlign: 'center' }}>
+                            <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 4, background: w.latestStatus === 'Tamamlandı' ? C.successBadgeBg : C.warningBadgeBg, color: w.latestStatus === 'Tamamlandı' ? C.good : C.copper, border: `1px solid ${w.latestStatus === 'Tamamlandı' ? C.successBadgeBorder : C.warningBadgeBorder}`, fontWeight: 600 }}>
+                              {w.latestStatus}
+                            </span>
+                          </td>
+                          <td style={{ padding: '12px', textAlign: 'right' }}>
+                            <button
+                              onClick={() => setSelectedWagonDetail(w.wagonNo)}
+                              style={{ background: C.headerBtnBg, border: `1px solid ${C.border}`, borderRadius: 6, color: C.line, padding: '4px 10px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}
+                            >
+                              Detay ➔
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -2756,11 +2891,10 @@ function App({ currentUser, onLogout }) {
           </div>
         )}
 
-        {/* 3. GÖRÜNÜM: YÖNETİCİ GRAFİKLERİ VE KPI DASHBOARD'U (ADIM 4) */}
+        {/* 3. GÖRÜNÜM: YÖNETİCİ GRAFİKLERİ VE KPI DASHBOARD'U */}
         {mainView === 'analytics' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             
-            {/* Üst 4 KPI Kartı */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
               <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 16, boxShadow: C.cardShadow }}>
                 <div style={{ fontSize: 11.5, color: C.dim, textTransform: 'uppercase', fontWeight: 600 }}>Fabrika Toplam Üretim</div>
@@ -2795,16 +2929,12 @@ function App({ currentUser, onLogout }) {
               </div>
             </div>
 
-            {/* Grafikler Izgarası (Trend & Pareto) */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 16 }}>
               <TrendChart weekDates={weekDates} data={data} carryoverMap={carryoverMap} stations={data.stations} />
               <ParetoChart downtimeSummary={downtimeSummary} />
             </div>
 
-            {/* Bölüm Karşılaştırması (Taşlama vs Kaynak-Montaj) & Haftanın Yıldızları */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 16 }}>
-              
-              {/* Taşlama vs Kaynak Kıyası */}
               <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 18, boxShadow: C.cardShadow }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: C.paper, marginBottom: 14 }}>⚖️ Taşlama vs. Kaynak-Montaj Karşılaştırması</div>
                 
@@ -2829,7 +2959,7 @@ function App({ currentUser, onLogout }) {
                       </span>
                     </div>
                     <div style={{ height: 10, background: C.trackBg, borderRadius: 5, overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${Math.min((groupTotals.kaynakmontaj.actual / Math.max(groupTotals.taslama.actual + groupTotals.kaynakmontaj.actual, 1)) * 100, 100)}%`, background: C.groupB, borderRadius: 5 }} />
+                      <div style={{ height: '100%', width: `${Math.min((groupTotals.kaynakmontaj.actual / Math.max(groupTotals.kaynakmontaj.actual + groupTotals.kaynakmontaj.actual, 1)) * 100, 100)}%`, background: C.groupB, borderRadius: 5 }} />
                     </div>
                   </div>
                 </div>
@@ -2840,7 +2970,6 @@ function App({ currentUser, onLogout }) {
                 </div>
               </div>
 
-              {/* Haftanın Yıldız İstasyonları (Top 3) */}
               <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 18, boxShadow: C.cardShadow }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: C.paper, marginBottom: 14 }}>🏆 Haftanın En Yüksek Verimli İstasyonları</div>
                 
