@@ -45,7 +45,6 @@
     cursor: grabbing;
   }
 
-  /* Koyu Mod (Dark Theme) CSS Kuralları */
   body[data-theme="dark"] .num-input {
     background: #0E1520;
     border: 1px solid #233142;
@@ -63,7 +62,6 @@
     border-color: #1E293B !important;
   }
 
-  /* Açık Mod (Windows 11 Light Theme) CSS Kuralları */
   body[data-theme="light"] .num-input {
     background: #FFFFFF;
     border: 1px solid #CBD5E1;
@@ -329,7 +327,6 @@ function workMinutesBetween(startMin, endMin, blocks) {
   return total;
 }
 
-// ÇİFT YÖNLÜ PERSONEL TRANSFERİ VE ZAMAN ÇİZELGESİ HESAPLAMA MOTORU
 function getStationStaffTimeline(dKey, stationId, stations, entries) {
   const entry = entries[`${dKey}|${stationId}`] || {};
   const totalStaff = parseFloat(entry.totalStaff) || 0;
@@ -338,14 +335,12 @@ function getStationStaffTimeline(dKey, stationId, stations, entries) {
 
   const events = [];
 
-  // 1. Bu istasyondan çıkanlar (Outbound) veya duruşlar
   const ownShifts = entry.staffShifts || [];
   ownShifts.forEach(sh => {
     if (!sh.time) return;
     const m = timeToMin(sh.time);
     if (m == null) return;
     
-    // Geriye dönük uyumluluk: transferredCount veya baseStaff - staff
     let count = sh.transferredCount != null ? parseFloat(sh.transferredCount) : (sh.staff != null ? Math.max(baseStaff - parseFloat(sh.staff), 0) : 0);
     if (isNaN(count)) count = 0;
 
@@ -366,7 +361,6 @@ function getStationStaffTimeline(dKey, stationId, stations, entries) {
     });
   });
 
-  // 2. Başka istasyonlardan bu istasyona gelen takviyeler (Inbound)
   stations.forEach(otherSt => {
     if (otherSt.id === stationId) return;
     const otherEntry = entries[`${dKey}|${otherSt.id}`];
@@ -393,7 +387,6 @@ function getStationStaffTimeline(dKey, stationId, stations, entries) {
   });
 
   events.sort((a, b) => a.timeMin - b.timeMin);
-
   return { baseStaff, events };
 }
 
@@ -407,7 +400,6 @@ function getStaffAtMinute(m, baseStaff, events) {
   return Math.max(current, 0);
 }
 
-// DİNAMİK PARÇALI PERSONEL VE GEÇİCİ DURUŞ HESAPLAMA MOTORU
 function calcDynamicSegmentsActual(startMin, endMin, baseStaff, events) {
   if (startMin == null || endMin == null || endMin <= startMin) return { totalActual: 0, segments: [] };
   
@@ -449,7 +441,6 @@ function calcDynamicSegmentsActual(startMin, endMin, baseStaff, events) {
   return { totalActual: Math.round(totalActual * 100) / 100, segments };
 }
 
-// PERSONEL KAYDIRMALI VE BEKLEMELİ TEORİK BİTİŞ SAATİ SİMÜLASYONU
 function estimateDynamicFinishTime(startMin, standardHours, baseStaff, events, decision, dayIdx = 0) {
   if (standardHours == null || standardHours <= 0) return { finishMin: startMin, mode: 'normal', label: minToTime(startMin) };
   
@@ -478,13 +469,11 @@ function estimateDynamicFinishTime(startMin, standardHours, baseStaff, events, d
     return { finishMin: toMin, finished: false };
   }
 
-  // 1. Normal Vardiya (06:55 - 16:55)
   const norm = consumeMinutes(startMin, SHIFT_END_MIN, SHIFT_BLOCKS);
   if (norm.finished) {
     return { finishMin: norm.finishMin, mode: 'normal', needsDecision: false, label: minToTime(norm.finishMin) };
   }
 
-  // 2. Cuma Durumu
   if (dayIdx === 4) {
     if (decision === 'yes' || decision === 'friday_ot') {
       const ot = consumeMinutes(SHIFT_END_MIN, OT_END_MIN, [OVERTIME_BLOCK]);
@@ -506,7 +495,6 @@ function estimateDynamicFinishTime(startMin, standardHours, baseStaff, events, d
     return { finishMin: norm.finishMin, mode: 'pending_friday', needsDecision: true, label: '? Karar Bekliyor' };
   }
 
-  // 3. Normal Hafta İçi Mesai
   if (decision === 'yes') {
     const ot = consumeMinutes(SHIFT_END_MIN, OT_END_MIN, [OVERTIME_BLOCK]);
     if (ot.finished) return { finishMin: ot.finishMin, mode: 'overtime', needsDecision: false, label: minToTime(ot.finishMin) };
@@ -703,7 +691,6 @@ function WagonDetailModal({ wagon, nowMin, onClose }) {
                   </div>
                 </div>
 
-                {/* Canlı İlerleme Çubuğu */}
                 <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5, marginBottom: 5 }}>
                     <span style={{ fontWeight: 600, color: C.paper, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -722,7 +709,6 @@ function WagonDetailModal({ wagon, nowMin, onClose }) {
                   )}
                 </div>
 
-                {/* Personel Kaydırma ve Takviye Dökümü */}
                 {step.segments && step.segments.length > 1 && (
                   <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 6, padding: '8px 10px', fontSize: 11 }}>
                     <div style={{ fontWeight: 700, color: C.line, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -1006,7 +992,6 @@ function App({ currentUser, onLogout }) {
 
   const [openShiftPanelStationId, setOpenShiftPanelStationId] = useState(null);
 
-  // Mouse ile Sürükle - Bırak (Drag & Drop)
   const [draggedIndex, setDraggedIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
   
@@ -1202,18 +1187,15 @@ function App({ currentUser, onLogout }) {
     scheduleWrite('stations', id, { [field]: value });
   }
 
-  // GÜNLÜK GİRİŞ GÜNCELLEME (ÇİFT YÖNLÜ PERSONEL TRANSFERİ DESTEKLİ)
   function updateEntry(dKey, stationId, field, value) {
     const key = `${dKey}|${stationId}`;
     const current = data.entries[key] || {};
     const merged = { ...current, [field]: value };
     const patch = { [field]: value };
 
-    // Zaman çizelgesini hesapla (gidenler ve diğer istasyonlardan gelenler)
     const tempEntries = { ...data.entries, [key]: merged };
     const timeline = getStationStaffTimeline(dKey, stationId, data.stations, tempEntries);
 
-    // 1. İş gerçekleşen a-s (Zaman çizelgesi ve takviyeler dikkate alınarak)
     if (merged.actualEndTime && !merged.isIdle) {
       const startMin = timeToMin(merged.startTime) ?? SHIFT_START_MIN;
       const endMin = timeToMin(merged.actualEndTime);
@@ -1225,7 +1207,6 @@ function App({ currentUser, onLogout }) {
       patch.actual = '';
     }
 
-    // 2. İş gerçekleşen a-s
     if (merged.hasSecondJob && merged.secondJobActualEndTime && !merged.isIdle) {
       const startMin2 = timeToMin(merged.secondJobStartTime) ?? (timeToMin(merged.actualEndTime) || SHIFT_START_MIN);
       const endMin2 = timeToMin(merged.secondJobActualEndTime);
@@ -1245,7 +1226,6 @@ function App({ currentUser, onLogout }) {
     scheduleWrite('entries', key, patch);
   }
 
-  // PERSONEL KAYDIRMA & GEÇİCİ DURUŞ YÖNETİMİ
   function addStaffShift(dKey, stationId, defaultTime, defaultCount, defaultTargetId) {
     const key = `${dKey}|${stationId}`;
     const current = data.entries[key] || {};
@@ -1625,7 +1605,6 @@ function App({ currentUser, onLogout }) {
     return { list, totalDowntimeHours };
   }, [data, weekDates, carryoverMap]);
 
-  // VAGON YAŞAM DÖNGÜSÜ & ÇİFT YÖNLÜ PERSONEL TRANSFERİ ENTEGRELİ MATRİS
   const wagonsCatalog = useMemo(() => {
     const map = {};
 
@@ -1934,7 +1913,6 @@ function App({ currentUser, onLogout }) {
     <div style={{ minHeight: '100vh', padding: '20px 16px 56px' }}>
       <div style={{ maxWidth: 1040, margin: '0 auto' }}>
 
-        {/* Üst Başlık Bloğu */}
         <div style={{ border: `1px solid ${C.border}`, background: C.panel, borderRadius: 10, marginBottom: 16, display: 'flex', flexWrap: 'wrap', overflow: 'hidden', boxShadow: C.cardShadow }}>
           <TitleCell label="Proje" minWidth={210}>
             <div style={{ fontWeight: 700, fontSize: 17, color: C.paper }}>İstasyon Verim Panosu</div>
@@ -1971,7 +1949,6 @@ function App({ currentUser, onLogout }) {
           </div>
         </div>
 
-        {/* Kullanıcı Bilgisi, Hızlı Vagon Arama, Tema Değiştir & Haftasonu Mesaisi */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 16, fontSize: 12, color: C.dim }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <span>Kullanıcı: <strong style={{ color: C.paper }}>{username}</strong></span>
@@ -2051,7 +2028,6 @@ function App({ currentUser, onLogout }) {
           </div>
         </div>
 
-        {/* Ana Görünüm Sekmeleri */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 18, background: C.tabStripBg, padding: 4, borderRadius: 10, border: `1px solid ${C.border}` }}>
           <button
             onClick={() => setMainView('dashboard')}
@@ -2123,7 +2099,6 @@ function App({ currentUser, onLogout }) {
           </button>
         </div>
 
-        {/* Haftasonu Modalı */}
         {showWeekendModal && (
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: C.modalOverlay, backdropFilter: 'blur(4px)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
             <div style={{ background: C.modalCardBg, border: `1px solid ${C.border}`, borderRadius: 12, width: '100%', maxWidth: 520, padding: 24, boxShadow: C.cardShadow }}>
@@ -2164,15 +2139,12 @@ function App({ currentUser, onLogout }) {
           </div>
         )}
 
-        {/* Vagon Detay Modalı */}
         {selectedWagonDetail && (
           <WagonDetailModal wagon={currentWagonDetailObj} nowMin={nowMin} onClose={() => setSelectedWagonDetail(null)} />
         )}
 
-        {/* 1. GÖRÜNÜM: GÜNLÜK İSTASYON PANOSU */}
         {mainView === 'dashboard' && (
           <>
-            {/* İstasyon Yönetimi & Sürükle-Bırak Sıralama */}
             <div style={{ marginBottom: 20 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                 <span style={{ fontSize: 12, fontWeight: 600, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.5, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -2287,7 +2259,6 @@ function App({ currentUser, onLogout }) {
               </div>
             </div>
 
-            {/* Gün Sekmeleri */}
             <div style={{ display: 'flex', gap: 6, padding: 4, background: C.tabStripBg, borderRadius: 10, marginBottom: 12, border: `1px solid ${C.border}` }}>
               {weekDates.map((d, i) => {
                 const active = i === dayIndex;
@@ -2318,7 +2289,6 @@ function App({ currentUser, onLogout }) {
               })}
             </div>
 
-            {/* Seçili Günün Panosu */}
             <div style={{ background: C.panel, border: `1px solid ${isWeekendDay ? (theme === 'light' ? '#C7D2FE' : C.weekend) : C.border}`, borderRadius: 10, padding: 18, marginBottom: 20, boxShadow: C.cardShadow }}>
               
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, paddingBottom: 12, borderBottom: `1px solid ${C.border}` }}>
@@ -2355,15 +2325,12 @@ function App({ currentUser, onLogout }) {
                   const isIdle = !!entry.isIdle;
                   const cDay = carryoverMap[s.id]?.[dayIndex];
                   
-                  // İstasyonun zaman çizelgesi (kendi gidenleri ve başka istasyonlardan gelen takviyeler)
                   const timeline = getStationStaffTimeline(selectedKey, s.id, data.stations, data.entries);
                   const currentStaffNow = getStaffAtMinute(nowMin, timeline.baseStaff, timeline.events);
                   const isCurrentlyPaused = currentStaffNow === 0 && (timeline.events.length > 0 || timeline.baseStaff === 0);
                   const isShiftPanelOpen = openShiftPanelStationId === s.id;
 
-                  // Gelen takviyeler (inbound)
                   const inboundEvents = timeline.events.filter(ev => ev.type === 'inbound');
-                  // Giden aktarmalar (outbound)
                   const outboundEvents = timeline.events.filter(ev => ev.type === 'outbound');
 
                   const totalActual = (parseFloat(entry.actual) || 0) + (entry.hasSecondJob ? (parseFloat(entry.secondJobActual) || 0) : 0);
@@ -2379,12 +2346,10 @@ function App({ currentUser, onLogout }) {
                   const lossPercent = (lossHours != null && totalStandard > 0) ? (lossHours / totalStandard) * 100 : null;
                   const showStatus = hasAnyInput(entry) && !isIdle;
 
-                  // 1. İş Dinamik Teorik Bitiş Saati (Takviyeler & Kaydırmalar Dikkate Alınarak)
                   const j1StartMin = timeToMin(entry.startTime) ?? SHIFT_START_MIN;
                   const j1Standard = cDay ? cDay.job1Standard : s.standardHours;
                   const j1Est = j1Standard != null ? estimateDynamicFinishTime(j1StartMin, j1Standard, timeline.baseStaff, timeline.events, entry.overtimeDecision, dayIndex) : null;
 
-                  // 2. İş Teorik Bitiş Saati
                   let j2Est = null;
                   if (entry.hasSecondJob) {
                     const j2StartMin = timeToMin(entry.secondJobStartTime) ?? (timeToMin(entry.actualEndTime) || j1Est?.finishMin || SHIFT_START_MIN);
@@ -2480,7 +2445,6 @@ function App({ currentUser, onLogout }) {
                         </div>
                       ) : (
                         <>
-                          {/* Vagon Numarası & Durumu */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, background: C.wagonBox, padding: '6px 10px', borderRadius: 6, border: `1px solid ${C.wagonBorder}` }}>
                             <span style={{ fontSize: 11, color: C.wagonText, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
                               <span>🚆</span> Vagon No:
@@ -2518,7 +2482,6 @@ function App({ currentUser, onLogout }) {
                             )}
                           </div>
 
-                          {/* Personel Girişi ve Vardiya İçi Kaydırma / Duruş Paneli */}
                           <div style={{ background: C.panelAlt, padding: 8, borderRadius: 6, border: `1px solid ${C.border}`, marginBottom: 10 }}>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 6 }}>
                               <div>
@@ -2531,7 +2494,6 @@ function App({ currentUser, onLogout }) {
                               </div>
                             </div>
 
-                            {/* Otomatik Gelen Takviyeler Varsa Görsel Bildirim */}
                             {inboundEvents.length > 0 && (
                               <div style={{ background: C.successBadgeBg, border: `1px solid ${C.successBadgeBorder}`, padding: '6px 8px', borderRadius: 4, marginBottom: 6, fontSize: 11, color: C.good, display: 'flex', flexDirection: 'column', gap: 2 }}>
                                 {inboundEvents.map((ev, evIdx) => (
@@ -2545,7 +2507,6 @@ function App({ currentUser, onLogout }) {
                               </div>
                             )}
 
-                            {/* Personel Kaydırma & Duruş Butonu */}
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: `1px solid ${C.border}`, paddingTop: 6 }}>
                               <button
                                 type="button"
@@ -2572,7 +2533,6 @@ function App({ currentUser, onLogout }) {
                               </span>
                             </div>
 
-                            {/* Açılır Personel Kaydırma & İstasyon Dondurma Formu */}
                             {isShiftPanelOpen && (
                               <div style={{ marginTop: 8, padding: 10, background: C.panel, borderRadius: 6, border: `1px dashed ${C.line}` }}>
                                 <div style={{ fontSize: 11, fontWeight: 700, color: C.line, marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -2652,7 +2612,6 @@ function App({ currentUser, onLogout }) {
                                         </button>
                                       </div>
 
-                                      {/* Vagon Numarası Seçimi / Girişi */}
                                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                         <span style={{ fontSize: 10.5, color: C.dim }}>Vagon No:</span>
                                         <input
@@ -2694,7 +2653,6 @@ function App({ currentUser, onLogout }) {
                             )}
                           </div>
 
-                          {/* 1. İŞ KUTUSU */}
                           <div style={{ background: C.panelAlt, border: `1px solid ${C.border}`, borderRadius: 6, padding: 10, marginBottom: 10 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                               <span style={{ fontSize: 11.5, fontFamily: "'JetBrains Mono', monospace", color: cDay?.isCarryover ? C.copper : C.paper, fontWeight: 700 }}>
@@ -2744,7 +2702,6 @@ function App({ currentUser, onLogout }) {
                               </div>
                             </div>
 
-                            {/* Personel Transfer Özeti */}
                             {timeline.events.length > 0 && (
                               <div style={{ marginTop: 4, fontSize: 10.5, color: C.line, fontFamily: "'JetBrains Mono', monospace" }}>
                                 ℹ Vardiya içi değişim: {timeline.events.map((ev, idx) => (
@@ -2762,7 +2719,6 @@ function App({ currentUser, onLogout }) {
                             )}
                           </div>
 
-                          {/* 2. İŞ BAŞLATMA BUTONU / ALANI */}
                           {!entry.hasSecondJob ? (
                             <button
                               type="button"
@@ -2912,7 +2868,6 @@ function App({ currentUser, onLogout }) {
                             </span>
                           </div>
 
-                          {/* Ek Mesai Bildirimleri */}
                           {isCardFullyFinishedOnTime ? (
                             <div style={{ marginBottom: 8, padding: '6px 10px', background: C.successBadgeBg, border: `1px solid ${C.successBadgeBorder}`, borderRadius: 6, fontSize: 11, color: C.good, display: 'flex', alignItems: 'center', gap: 6, fontWeight: 500 }}>
                               <span>✓</span> İş vardiya içinde (16:55) başarıyla tamamlandı.
@@ -3080,7 +3035,6 @@ function App({ currentUser, onLogout }) {
               </div>
             </div>
 
-            {/* Final Temizlik Teslim Tahmini */}
             {finalCascade.some((c) => c) && (
               <div style={{ marginBottom: 20 }}>
                 <div style={{ fontSize: 12, fontWeight: 600, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
@@ -3142,7 +3096,6 @@ function App({ currentUser, onLogout }) {
               </div>
             )}
 
-            {/* Grup Toplamları */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginBottom: 20 }}>
               <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, padding: '14px 18px', boxShadow: C.cardShadow }}>
                 <GroupTag group="taslama" />
@@ -3174,7 +3127,6 @@ function App({ currentUser, onLogout }) {
               </div>
             </div>
 
-            {/* Ek Mesai Gereken İstasyonlar */}
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
                 Ek Mesai Gerekebilecek İstasyonlar
@@ -3200,7 +3152,6 @@ function App({ currentUser, onLogout }) {
               )}
             </div>
 
-            {/* Haftalık Özet Tablosu */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
               <span style={{ fontSize: 12, fontWeight: 600, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.5 }}>Haftalık Özet — İstasyon Bazlı</span>
               <div style={{ display: 'flex', gap: 8 }}>
@@ -3251,7 +3202,6 @@ function App({ currentUser, onLogout }) {
           </>
         )}
 
-        {/* 2. GÖRÜNÜM: VAGON İZLEME MATRİSİ */}
         {mainView === 'wagons' && (
           <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: 20, boxShadow: C.cardShadow }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
@@ -3371,7 +3321,6 @@ function App({ currentUser, onLogout }) {
           </div>
         )}
 
-        {/* 3. GÖRÜNÜM: YÖNETİCİ GRAFİKLERİ VE KPI DASHBOARD'U */}
         {mainView === 'analytics' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             
@@ -3495,3 +3444,57 @@ function Root() {
   const [themeMode, setThemeMode] = useState(() => {
     return localStorage.getItem('est_app_theme') || 'light';
   });
+
+  const toggleTheme = () => {
+    setThemeMode((prev) => {
+      const next = prev === 'light' ? 'dark' : 'light';
+      localStorage.setItem('est_app_theme', next);
+      return next;
+    });
+  };
+
+  const C = THEMES[themeMode] || THEMES.light;
+
+  useEffect(() => {
+    document.body.setAttribute('data-theme', themeMode);
+    document.body.style.backgroundColor = C.page;
+    document.body.style.color = C.paper;
+  }, [themeMode, C.page, C.paper]);
+
+  useEffect(() => {
+    const unsub = auth.onAuthStateChanged((user) => {
+      setCurrentUser(user);
+      setAuthState(user ? 'signed-in' : 'signed-out');
+    });
+    return unsub;
+  }, []);
+
+  const contextValue = useMemo(() => ({
+    theme: themeMode,
+    toggleTheme,
+    C
+  }), [themeMode, C]);
+
+  if (authState === 'loading') {
+    return (
+      <div style={{ minHeight: '100vh', background: C.page, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.dim, fontFamily: "'Segoe UI', sans-serif" }}>
+        Yükleniyor…
+      </div>
+    );
+  }
+
+  return (
+    <ThemeContext.Provider value={contextValue}>
+      {authState === 'signed-out' ? (
+        <LoginScreen />
+      ) : (
+        <App currentUser={currentUser} onLogout={() => auth.signOut()} />
+      )}
+    </ThemeContext.Provider>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<Root />);
+</script>
+</body>
+</html>
