@@ -51,6 +51,11 @@
     cursor: grabbing;
   }
 
+  @keyframes slideInLeft {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(0); }
+  }
+
   body[data-theme="dark"] .num-input {
     background: #0D141F;
     border: 1px solid #223044;
@@ -768,16 +773,40 @@ function WagonDetailModal({ wagon, nowMin, onClose }) {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5, marginBottom: 6 }}>
                     <span style={{ fontWeight: 700, color: C.paper, display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span>⏱️ İş İlerlemesi:</span>
-                      <strong style={{ color: liveProg.color }}>{liveProg.label}</strong>
+                      <strong style={{ color: liveProg.color }}>Teorik: {liveProg.label}</strong>
+                      {step.actualProgress != null && (
+                        <span style={{ color: C.good, background: C.successBadgeBg, border: `1px solid ${C.successBadgeBorder}`, padding: '1px 7px', borderRadius: 4, fontSize: 12, fontWeight: 800, marginLeft: 6 }}>
+                          Fiili: %{step.actualProgress}
+                        </span>
+                      )}
                     </span>
                     <span style={{ fontSize: 12, color: C.dim, fontFamily: "'JetBrains Mono', monospace" }}>
                       Başlama: <strong>{minToTime(step.startMin)}</strong> → Teorik Bitiş: <strong>{minToTime(step.finishMin)}</strong>
                     </span>
                   </div>
 
-                  {liveProg.percent != null && (
-                    <div style={{ height: 10, background: C.trackBg, borderRadius: 5, overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${liveProg.percent}%`, background: liveProg.color, borderRadius: 5, transition: 'width 0.4s ease' }} />
+                  <div style={{ height: 9, background: C.trackBg, borderRadius: 5, overflow: 'hidden', position: 'relative' }}>
+                    {liveProg.percent != null && (
+                      <div style={{ position: 'absolute', height: '100%', width: `${liveProg.percent}%`, background: liveProg.color, opacity: 0.45, borderRadius: 5 }} title={`Teorik: %${liveProg.percent}`} />
+                    )}
+                    {step.actualProgress != null && (
+                      <div style={{ position: 'absolute', height: '100%', width: `${Math.min(Math.max(step.actualProgress, 0), 100)}%`, background: C.good, borderRadius: 5 }} title={`Fiili: %${step.actualProgress}`} />
+                    )}
+                  </div>
+
+                  {step.actualProgress != null && liveProg.percent != null && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 5, fontSize: 11 }}>
+                      {(() => {
+                        const diff = step.actualProgress - liveProg.percent;
+                        if (diff > 5) {
+                          return <span style={{ color: C.good, fontWeight: 700 }}>🟢 Planın Önünde (+%{Math.round(diff)})</span>;
+                        } else if (diff < -5) {
+                          return <span style={{ color: C.bad, fontWeight: 700 }}>🔴 Plandan Geride (%{Math.round(Math.abs(diff))} geride)</span>;
+                        } else {
+                          return <span style={{ color: C.line, fontWeight: 700 }}>🔵 Planla Uyumlu</span>;
+                        }
+                      })()}
+                      <span style={{ color: C.dim }}>Mavi: Teorik (%{liveProg.percent}) | Yeşil: Fiili (%{step.actualProgress})</span>
                     </div>
                   )}
                 </div>
@@ -1068,6 +1097,7 @@ function App({ currentUser, onLogout }) {
   const [wagonStatusFilter, setWagonStatusFilter] = useState('all');
 
   const [openShiftPanelStationId, setOpenShiftPanelStationId] = useState(null);
+  const [isStationDrawerOpen, setIsStationDrawerOpen] = useState(false);
 
   const [draggedIndex, setDraggedIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
@@ -1411,7 +1441,7 @@ function App({ currentUser, onLogout }) {
     });
 
     setData((prev) => ({ ...prev, entries: updatedEntries }));
-    batch.commit().then(() => recordActivity()).catch((e) => console.error('Sıfırlama hatası', e));
+    batch.commit().then(() => recordActivity()).catch((e) => console.error('Sıflama hatası', e));
   }
 
   function hasDataForDate(d) {
@@ -1802,6 +1832,7 @@ function App({ currentUser, onLogout }) {
             hasStaffShift: timeline.events.length > 0,
             currentStaffNow,
             segments: dyn.segments,
+            actualProgress: e.actualProgress != null && e.actualProgress !== '' ? parseFloat(e.actualProgress) : null,
             downtimeReason: e.downtimeReason
           });
 
@@ -1856,6 +1887,7 @@ function App({ currentUser, onLogout }) {
               isCurrentlyPaused: false,
               inboundReinforcements: [],
               hasStaffShift: false,
+              actualProgress: e.secondJobActualProgress != null && e.secondJobActualProgress !== '' ? parseFloat(e.secondJobActualProgress) : null,
               downtimeReason: e.downtimeReason
             });
             map[w2].totalActual += j2Act;
@@ -1871,6 +1903,8 @@ function App({ currentUser, onLogout }) {
       const overallEff = calcEff(w.totalActual, w.totalStandard);
       const lastStep = w.steps[w.steps.length - 1];
       const liveProg = lastStep ? calcLiveProgress(lastStep.startMin, lastStep.finishMin, lastStep.isDone, nowMin) : null;
+      const lastWithActual = [...w.steps].reverse().find(st => st.actualProgress != null);
+      const latestActualProgress = lastWithActual ? lastWithActual.actualProgress : null;
 
       return {
         ...w,
@@ -1878,6 +1912,7 @@ function App({ currentUser, onLogout }) {
         stationsList: Array.from(w.stationsSet),
         overallEff,
         liveProg,
+        latestActualProgress,
         isPaused: lastStep?.isCurrentlyPaused
       };
     }).sort((a, b) => a.wagonNo.localeCompare(b.wagonNo, undefined, { numeric: true }));
@@ -1937,6 +1972,33 @@ function App({ currentUser, onLogout }) {
       </tr>`;
     }).join('');
 
+    const wagonBreakdownRows = wagonsCatalog.map(w => {
+      let taslamaAct = 0, montajAct = 0, kaynakAct = 0;
+      w.steps.forEach(st => {
+        const grp = resolveStationGroup(st.stationName, st.group);
+        if (grp === 'taslama') taslamaAct += st.actual;
+        else if (grp === 'kaynak') kaynakAct += st.actual;
+        else montajAct += st.actual;
+      });
+      const totAct = taslamaAct + montajAct + kaynakAct;
+      const eff = calcEff(totAct, w.totalStandard);
+      const isDone = w.latestStatus === 'Tamamlandı';
+      const badgeColor = isDone ? '#059669' : '#d97706';
+      const badgeIcon = isDone ? '✓' : '⏳';
+
+      return `<tr>
+        <td style="font-weight:700;color:#0284c7;font-size:13px">🚆 #${w.wagonNo}</td>
+        <td style="font-size:11.5px;color:#334155">${w.stationsList.join(' → ') || '—'}</td>
+        <td style="text-align:right;font-family:monospace;font-weight:600">${taslamaAct > 0 ? taslamaAct.toFixed(1) : '—'}</td>
+        <td style="text-align:right;font-family:monospace;font-weight:600">${montajAct > 0 ? montajAct.toFixed(1) : '—'}</td>
+        <td style="text-align:right;font-family:monospace;font-weight:600">${kaynakAct > 0 ? kaynakAct.toFixed(1) : '—'}</td>
+        <td style="text-align:right;font-family:monospace;font-weight:800;font-size:13px;background:#F0F9FF;color:#0369A1">${totAct.toFixed(1)} a-s</td>
+        <td style="text-align:right;font-family:monospace">${w.totalStandard > 0 ? w.totalStandard.toFixed(1) : '—'}</td>
+        <td style="text-align:right;font-weight:800">${eff !== null ? Math.round(eff) + '%' : '—'}</td>
+        <td style="text-align:center"><span style="color:${badgeColor};font-weight:700;font-size:11.5px">${badgeIcon} ${w.latestStatus}</span></td>
+      </tr>`;
+    }).join('');
+
     const downtimeRows = downtimeSummary.list.map((d) => `<li><strong>${d.label}:</strong> ${d.hours.toFixed(1)} a-s (%${Math.round(d.percent)}) — Etkilenen istasyonlar: ${d.stationsList.join(', ')}</li>`).join('');
     const overtimeStations = stationSummaries.filter((s) => s.active !== false && s.totalCapacityShortfall > 0.05).sort((a, b) => b.totalCapacityShortfall - a.totalCapacityShortfall);
     const overtimeRows = overtimeStations.map((s) => `<li>${s.name} (${GROUP_LABEL[s.group]}): ≈${s.totalCapacityShortfall.toFixed(1)} adam-saat kapasite açığı${s.avgPresent > 0 ? ` · ≈${(s.totalCapacityShortfall / s.avgPresent).toFixed(1)} saat/kişi ek mesai` : ''}</li>`).join('');
@@ -1965,6 +2027,25 @@ function App({ currentUser, onLogout }) {
         <thead><tr><th>İstasyon</th><th>Vagon No & İş Durumu</th><th style="text-align:right">Hedef Standart (a-s)</th><th style="text-align:right">Gerçekleşen (a-s)</th><th style="text-align:right">Kayıp/Tasarruf (a-s)</th><th style="text-align:right">Devamsızlık</th><th style="text-align:right">Verim</th></tr></thead>
         <tbody>${rows || '<tr><td colspan="7">Bu hafta için veri girilmemiş.</td></tr>'}</tbody>
       </table>
+
+      <h3 style="margin-top:28px">🚆 Vagon Bazlı Bölüm Kırılımı (Taşlama / Montaj / Kaynak) ve Toplam Çalışan Adam-Saat</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Vagon No</th>
+            <th>Uğradığı İstasyonlar</th>
+            <th style="text-align:right">🧽 Taşlama (a-s)</th>
+            <th style="text-align:right">🔩 Montaj (a-s)</th>
+            <th style="text-align:right">⚡ Kaynak (a-s)</th>
+            <th style="text-align:right;background:#E0F2FE;color:#0369A1">Toplam Çalışan (a-s)</th>
+            <th style="text-align:right">Hedef (a-s)</th>
+            <th style="text-align:right">Verim</th>
+            <th style="text-align:center">Son Durum</th>
+          </tr>
+        </thead>
+        <tbody>${wagonBreakdownRows || '<tr><td colspan="9">Bu hafta için vagon verisi girilmemiş.</td></tr>'}</tbody>
+      </table>
+
       <div class="grid3">
         <div class="box">🧽 Taşlama Toplamı<b>${groupTotals.taslama.actual.toFixed(1)} a-s</b></div>
         <div class="box">🔩 Montaj Toplamı<b>${groupTotals.montaj.actual.toFixed(1)} a-s</b></div>
@@ -2166,6 +2247,26 @@ function App({ currentUser, onLogout }) {
             >
               <span style={{ fontSize: 15 }}>🛠️</span> Haftasonu
             </button>
+            <button 
+              onClick={() => setIsStationDrawerOpen(true)} 
+              style={{
+                background: C.headerBtnBg,
+                border: `1px solid ${C.border}`,
+                borderRadius: 8,
+                color: C.paper,
+                padding: '7px 14px',
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                boxShadow: C.cardShadow
+              }}
+              title="İstasyon Sıralama & Yönetim Çekmecesini Aç"
+            >
+              <span style={{ fontSize: 15 }}>⚙️</span> İstasyonlar ({displayedStations.length})
+            </button>
             <button onClick={() => auth.signOut()} style={{ background: C.headerBtnBg, border: `1px solid ${C.border}`, borderRadius: 8, color: C.dim, padding: '7px 14px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Çıkış</button>
           </div>
         </div>
@@ -2281,125 +2382,233 @@ function App({ currentUser, onLogout }) {
           </div>
         )}
 
+        {isStationDrawerOpen && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: C.modalOverlay,
+              backdropFilter: 'blur(5px)',
+              zIndex: 9999,
+              display: 'flex'
+            }}
+            onClick={() => setIsStationDrawerOpen(false)}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: 520,
+                maxWidth: '92vw',
+                height: '100vh',
+                background: C.panel,
+                borderRight: `1px solid ${C.border}`,
+                display: 'flex',
+                flexDirection: 'column',
+                boxShadow: '8px 0 30px rgba(0,0,0,0.3)',
+                animation: 'slideInLeft 0.22s cubic-bezier(0.16, 1, 0.3, 1)'
+              }}
+            >
+              <div style={{ padding: '18px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: C.panelAlt }}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: C.paper, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span>⚙️</span> İstasyon Tanımları & Sıralama
+                  </div>
+                  <div style={{ fontSize: 12, color: C.dim, marginTop: 3 }}>
+                    Mouse ile basılı tutup sürükleyerek sıralamayı belirleyin
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsStationDrawerOpen(false)}
+                  style={{
+                    background: C.panel,
+                    border: `1px solid ${C.border}`,
+                    borderRadius: '50%',
+                    width: 32,
+                    height: 32,
+                    color: C.paper,
+                    fontSize: 16,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: C.cardShadow
+                  }}
+                  title="Kapat"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div style={{ padding: '10px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: C.panel }}>
+                <span style={{ fontSize: 12.5, color: C.dim, fontWeight: 600 }}>
+                  Toplam {displayedStations.length} İstasyon
+                </span>
+                <button
+                  onClick={() => setShowInactiveStations(!showInactiveStations)}
+                  style={{
+                    background: C.panelAlt,
+                    border: `1px solid ${C.border}`,
+                    borderRadius: 6,
+                    color: showInactiveStations ? C.good : C.dim,
+                    fontSize: 12,
+                    padding: '5px 10px',
+                    cursor: 'pointer',
+                    fontWeight: 700
+                  }}
+                >
+                  {showInactiveStations ? '✓ Pasifler Gösteriliyor' : '+ Pasifleri Göster'}
+                </button>
+              </div>
+
+              <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {displayedStations.map((s, idx) => {
+                  const isBeingDragged = draggedIndex === idx;
+                  const isDragOver = dragOverIndex === idx;
+
+                  return (
+                    <div
+                      key={s.id}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, idx)}
+                      onDragOver={(e) => handleDragOver(e, idx)}
+                      onDrop={(e) => handleDrop(e, idx)}
+                      onDragEnd={() => { setDraggedIndex(null); setDragOverIndex(null); }}
+                      className="station-drag-row"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        background: isDragOver ? (theme === 'light' ? '#E0F2FE' : '#1E293B') : (s.active === false ? (theme === 'light' ? '#F1F5F9' : '#0B0F17') : C.panelAlt),
+                        border: isDragOver ? `2px dashed ${C.line}` : `1px solid ${C.border}`,
+                        borderRadius: 8,
+                        padding: '8px 10px',
+                        opacity: isBeingDragged ? 0.35 : (s.active === false ? 0.6 : 1),
+                        transform: isDragOver ? 'scale(1.01)' : 'none',
+                        boxShadow: isDragOver ? `0 0 12px ${C.line}44` : 'none',
+                        transition: 'all 0.12s ease'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.dim }}>
+                        <span style={{ fontSize: 16, lineHeight: 1, letterSpacing: -1, color: C.line, fontWeight: 800 }} title="Mouse ile basılı tutup yukarı/aşağı sürükleyin">
+                          ⠿
+                        </span>
+                        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, fontWeight: 800, color: C.dim, width: 20, textAlign: 'center' }}>
+                          {String(idx + 1).padStart(2, '0')}
+                        </span>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginRight: 2 }}>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); moveStation(idx, -1); }}
+                            disabled={idx === 0}
+                            style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 3, color: idx === 0 ? C.dim : C.paper, cursor: idx === 0 ? 'default' : 'pointer', padding: '1px 4px', fontSize: 8, lineHeight: 1, opacity: idx === 0 ? 0.25 : 1 }}
+                            title="1 Yukarı Kaydır"
+                          >
+                            ▲
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); moveStation(idx, 1); }}
+                            disabled={idx === displayedStations.length - 1}
+                            style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 3, color: idx === displayedStations.length - 1 ? C.dim : C.paper, cursor: idx === displayedStations.length - 1 ? 'default' : 'pointer', padding: '1px 4px', fontSize: 8, lineHeight: 1, opacity: idx === displayedStations.length - 1 ? 0.25 : 1 }}
+                            title="1 Aşağı Kaydır"
+                          >
+                            ▼
+                          </button>
+                        </div>
+                      </div>
+
+                      <GroupTag group={s.group} />
+                      <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: s.active === false ? C.dim : C.paper, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {s.name} {s.active === false && <span style={{ fontSize: 11, color: C.bad }}>(Pasif)</span>}
+                      </span>
+
+                      <input
+                        type="number" min="0" step="0.5" placeholder="a-s"
+                        className="num-input num-input-sm" style={{ width: 68, fontSize: 12.5, padding: '4px 6px' }}
+                        value={s.standardHours ?? ''}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => updateStationField(s.id, 'standardHours', e.target.value === '' ? null : parseFloat(e.target.value))}
+                        title="Standart adam-saat"
+                      />
+
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleStationActive(s.id, s.active !== false); }}
+                        style={{ background: s.active === false ? C.dangerBadgeBg : C.successBadgeBg, border: `1px solid ${s.active === false ? C.dangerBadgeBorder : C.successBadgeBorder}`, color: s.active === false ? C.bad : C.good, cursor: 'pointer', padding: '4px 8px', fontSize: 11, fontWeight: 700, borderRadius: 5 }}
+                      >
+                        {s.active === false ? 'Pasif' : 'Aktif'}
+                      </button>
+
+                      <button
+                        onClick={(e) => { e.stopPropagation(); removeStation(s.id); }}
+                        style={{ background: 'transparent', border: 'none', color: C.dim, cursor: 'pointer', padding: '0 4px', fontSize: 16 }}
+                        title="Tamamen Sil"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={{ padding: '16px 20px', borderTop: `1px solid ${C.border}`, background: C.panelAlt, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: C.dim }}>+ Yeni İstasyon Ekle</div>
+                <input
+                  value={newStation}
+                  onChange={(e) => setNewStation(e.target.value)}
+                  placeholder="İstasyon adı (örn. Çatı Montaj)"
+                  style={{ width: '100%', background: C.page, border: `1px solid ${C.border}`, borderRadius: 8, color: C.paper, padding: '8px 12px', fontSize: 13 }}
+                />
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button type="button" onClick={() => setNewGroup('taslama')} style={{ flex: 1, fontSize: 11.5, fontWeight: 700, padding: '6px 8px', cursor: 'pointer', borderRadius: 6, background: newGroup === 'taslama' ? `${C.groupTaslama}22` : C.panel, border: `1px solid ${newGroup === 'taslama' ? C.groupTaslama : C.border}`, color: newGroup === 'taslama' ? C.groupTaslama : C.dim }}>🧽 Taşlama</button>
+                  <button type="button" onClick={() => setNewGroup('montaj')} style={{ flex: 1, fontSize: 11.5, fontWeight: 700, padding: '6px 8px', cursor: 'pointer', borderRadius: 6, background: newGroup === 'montaj' ? `${C.groupMontaj}22` : C.panel, border: `1px solid ${newGroup === 'montaj' ? C.groupMontaj : C.border}`, color: newGroup === 'montaj' ? C.groupMontaj : C.dim }}>🔩 Montaj</button>
+                  <button type="button" onClick={() => setNewGroup('kaynak')} style={{ flex: 1, fontSize: 11.5, fontWeight: 700, padding: '6px 8px', cursor: 'pointer', borderRadius: 6, background: newGroup === 'kaynak' ? `${C.groupKaynak}22` : C.panel, border: `1px solid ${newGroup === 'kaynak' ? C.groupKaynak : C.border}`, color: newGroup === 'kaynak' ? C.groupKaynak : C.dim }}>⚡ Kaynak</button>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input type="number" min="0" step="0.5" placeholder="Standart a-s" className="num-input num-input-sm" style={{ flex: 1, fontSize: 13 }} value={newStandard} onChange={(e) => setNewStandard(e.target.value)} />
+                  <button onClick={addStation} style={{ background: C.line, border: 'none', borderRadius: 8, color: '#FFFFFF', padding: '8px 18px', cursor: 'pointer', fontWeight: 800, fontSize: 13 }}>Ekle</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {selectedWagonDetail && (
           <WagonDetailModal wagon={currentWagonDetailObj} nowMin={nowMin} onClose={() => setSelectedWagonDetail(null)} />
         )}
 
         {mainView === 'dashboard' && (
           <>
-            <div style={{ marginBottom: 22 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.6, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 16 }}>⠿</span> İstasyon Tanımları (Mouse ile Tutup Sıralamayı Kaydırın)
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
+              <button
+                onClick={() => setIsStationDrawerOpen(true)}
+                style={{
+                  background: C.panelAlt,
+                  border: `1px solid ${C.border}`,
+                  borderRadius: 9,
+                  color: C.paper,
+                  padding: '8px 16px',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 9,
+                  boxShadow: C.cardShadow
+                }}
+              >
+                <span style={{ fontSize: 16 }}>⚙️</span>
+                <span>İstasyon Sıralama & Tanımları (Sol Çekmece)</span>
+                <span style={{ fontSize: 11, background: `${C.line}22`, color: C.line, padding: '2px 8px', borderRadius: 10, fontWeight: 800 }}>
+                  {displayedStations.length} İstasyon
                 </span>
-                <button 
-                  onClick={() => setShowInactiveStations(!showInactiveStations)} 
-                  style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, color: showInactiveStations ? C.good : C.dim, fontSize: 12, padding: '6px 12px', cursor: 'pointer', fontWeight: 600 }}>
-                  {showInactiveStations ? '✓ Pasifler Gösteriliyor' : '+ Pasif İstasyonları Göster'}
-                </button>
-              </div>
-              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: C.cardShadow }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
-                  {displayedStations.map((s, idx) => {
-                    const isBeingDragged = draggedIndex === idx;
-                    const isDragOver = dragOverIndex === idx;
-
-                    return (
-                      <div 
-                        key={s.id} 
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, idx)}
-                        onDragOver={(e) => handleDragOver(e, idx)}
-                        onDrop={(e) => handleDrop(e, idx)}
-                        onDragEnd={() => { setDraggedIndex(null); setDragOverIndex(null); }}
-                        className="station-drag-row"
-                        style={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
-                          gap: 10, 
-                          background: isDragOver ? (theme === 'light' ? '#E0F2FE' : '#1E293B') : (s.active === false ? (theme === 'light' ? '#F1F5F9' : '#0B0F17') : C.panelAlt), 
-                          border: isDragOver ? `2px dashed ${C.line}` : `1px solid ${C.border}`, 
-                          borderRadius: 8, 
-                          padding: '9px 12px', 
-                          opacity: isBeingDragged ? 0.35 : (s.active === false ? 0.6 : 1),
-                          transform: isDragOver ? 'scale(1.01)' : 'none',
-                          boxShadow: isDragOver ? `0 0 12px ${C.line}44` : 'none',
-                          transition: 'all 0.12s ease'
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: C.dim }}>
-                          <span style={{ fontSize: 18, lineHeight: 1, letterSpacing: -1, color: C.line, fontWeight: 800 }} title="Mouse ile basılı tutup yukarı/aşağı sürükleyin">
-                            ⠿
-                          </span>
-                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 800, color: C.dim, width: 22, textAlign: 'center' }}>
-                            {String(idx + 1).padStart(2, '0')}
-                          </span>
-
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginRight: 2 }}>
-                            <button
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); moveStation(idx, -1); }}
-                              disabled={idx === 0}
-                              style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, color: idx === 0 ? C.dim : C.paper, cursor: idx === 0 ? 'default' : 'pointer', padding: '2px 5px', fontSize: 9, lineHeight: 1, opacity: idx === 0 ? 0.25 : 1 }}
-                              title="1 Yukarı Kaydır"
-                            >
-                              ▲
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); moveStation(idx, 1); }}
-                              disabled={idx === displayedStations.length - 1}
-                              style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, color: idx === displayedStations.length - 1 ? C.dim : C.paper, cursor: idx === displayedStations.length - 1 ? 'default' : 'pointer', padding: '2px 5px', fontSize: 9, lineHeight: 1, opacity: idx === displayedStations.length - 1 ? 0.25 : 1 }}
-                              title="1 Aşağı Kaydır"
-                            >
-                              ▼
-                            </button>
-                          </div>
-                        </div>
-
-                        <GroupTag group={s.group} />
-                        <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: s.active === false ? C.dim : C.paper }}>
-                          {s.name} {s.active === false && <span style={{ fontSize: 12, color: C.bad }}>(Pasif)</span>}
-                        </span>
-                        
-                        <input
-                          type="number" min="0" step="0.5" placeholder="a-s"
-                          className="num-input num-input-sm" style={{ width: 85, fontSize: 13.5 }}
-                          value={s.standardHours ?? ''}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => updateStationField(s.id, 'standardHours', e.target.value === '' ? null : parseFloat(e.target.value))}
-                        />
-                        
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); toggleStationActive(s.id, s.active !== false); }} 
-                          style={{ background: s.active === false ? C.dangerBadgeBg : C.successBadgeBg, border: `1px solid ${s.active === false ? C.dangerBadgeBorder : C.successBadgeBorder}`, color: s.active === false ? C.bad : C.good, cursor: 'pointer', padding: '5px 12px', fontSize: 12, fontWeight: 700, borderRadius: 6 }}
-                        >
-                          {s.active === false ? 'Pasif' : 'Aktif'}
-                        </button>
-                        
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); removeStation(s.id); }} 
-                          style={{ background: 'transparent', border: 'none', color: C.dim, cursor: 'pointer', padding: '0 6px', fontSize: 18 }} 
-                          title="Tamamen Sil"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-                
-                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <input value={newStation} onChange={(e) => setNewStation(e.target.value)} placeholder="Yeni istasyon adı" style={{ flex: 2, minWidth: 180, background: C.page, border: `1px solid ${C.border}`, borderRadius: 8, color: C.paper, padding: '10px 14px', fontSize: 14 }} />
-                  <div style={{ display: 'flex', gap: 5 }}>
-                    <button type="button" onClick={() => setNewGroup('taslama')} style={{ fontSize: 12.5, fontWeight: 700, padding: '8px 12px', cursor: 'pointer', borderRadius: 8, background: newGroup === 'taslama' ? `${C.groupTaslama}22` : C.panelAlt, border: `1px solid ${newGroup === 'taslama' ? C.groupTaslama : C.border}`, color: newGroup === 'taslama' ? C.groupTaslama : C.dim }}>🧽 Taşlama</button>
-                    <button type="button" onClick={() => setNewGroup('montaj')} style={{ fontSize: 12.5, fontWeight: 700, padding: '8px 12px', cursor: 'pointer', borderRadius: 8, background: newGroup === 'montaj' ? `${C.groupMontaj}22` : C.panelAlt, border: `1px solid ${newGroup === 'montaj' ? C.groupMontaj : C.border}`, color: newGroup === 'montaj' ? C.groupMontaj : C.dim }}>🔩 Montaj</button>
-                    <button type="button" onClick={() => setNewGroup('kaynak')} style={{ fontSize: 12.5, fontWeight: 700, padding: '8px 12px', cursor: 'pointer', borderRadius: 8, background: newGroup === 'kaynak' ? `${C.groupKaynak}22` : C.panelAlt, border: `1px solid ${newGroup === 'kaynak' ? C.groupKaynak : C.border}`, color: newGroup === 'kaynak' ? C.groupKaynak : C.dim }}>⚡ Kaynak</button>
-                  </div>
-                  <input type="number" min="0" step="0.5" placeholder="Standart a-s" className="num-input" style={{ width: 125, fontSize: 14 }} value={newStandard} onChange={(e) => setNewStandard(e.target.value)} />
-                  <button onClick={addStation} style={{ background: C.line, border: 'none', borderRadius: 8, color: '#FFFFFF', padding: '10px 22px', cursor: 'pointer', fontWeight: 800, fontSize: 14, boxShadow: '0 2px 6px rgba(2,132,199,0.25)' }}>Ekle</button>
-                </div>
-              </div>
+              </button>
+              <span style={{ fontSize: 12.5, color: C.dim }}>
+                İstasyonları sürükleyip sıralamak veya yeni istasyon eklemek için sol çekmeceyi açın ⇥
+              </span>
             </div>
 
             <div style={{ display: 'flex', gap: 8, padding: 5, background: C.tabStripBg, borderRadius: 12, marginBottom: 16, border: `1px solid ${C.border}` }}>
@@ -2464,7 +2673,7 @@ function App({ currentUser, onLogout }) {
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 16 }}>
-                {data.stations.filter(s => s.active !== false).map((s) => {
+                {data.stations.filter(s => s.active !== false).map((s, sIdx) => {
                   const entry = data.entries[`${selectedKey}|${s.id}`] || {};
                   const isIdle = !!entry.isIdle;
                   const cDay = carryoverMap[s.id]?.[dayIndex];
@@ -2495,8 +2704,9 @@ function App({ currentUser, onLogout }) {
                   const j1Est = j1Standard != null ? estimateDynamicFinishTime(j1StartMin, j1Standard, timeline.baseStaff, timeline.events, entry.overtimeDecision, dayIndex) : null;
 
                   let j2Est = null;
+                  let j2StartMin = null;
                   if (entry.hasSecondJob) {
-                    const j2StartMin = timeToMin(entry.secondJobStartTime) ?? (timeToMin(entry.actualEndTime) || j1Est?.finishMin || SHIFT_START_MIN);
+                    j2StartMin = timeToMin(entry.secondJobStartTime) ?? (timeToMin(entry.actualEndTime) || j1Est?.finishMin || SHIFT_START_MIN);
                     const j2Standard = parseFloat(entry.secondJobStandard) || s.standardHours || 0;
                     j2Est = j2Standard > 0 ? estimateDynamicFinishTime(j2StartMin, j2Standard, timeline.baseStaff, [], entry.overtimeDecision, dayIndex) : null;
                   }
@@ -2510,6 +2720,9 @@ function App({ currentUser, onLogout }) {
                   const isJob2Completed = hasJob2 && (entry.secondJobStatus !== 'in_progress') && (secondActualEndMin != null);
                   const isJob2FinishedWithinShift = isJob2Completed && (secondActualEndMin <= SHIFT_END_MIN);
 
+                  const j1LiveProg = calcLiveProgress(j1StartMin, j1Est?.finishMin, isJob1Completed, nowMin);
+                  const j2LiveProg = hasJob2 ? calcLiveProgress(j2StartMin, j2Est?.finishMin, isJob2Completed, nowMin) : null;
+
                   const isCardFullyFinishedOnTime = hasJob2 ? isJob2FinishedWithinShift : isJob1FinishedWithinShift;
                   const activeEst = hasJob2 ? (isJob2Completed ? null : j2Est) : (isJob1Completed ? null : j1Est);
                   const activeJobName = hasJob2 ? '2. İş' : (cDay?.isCarryover ? 'Devreden İş' : '1. İş');
@@ -2518,11 +2731,34 @@ function App({ currentUser, onLogout }) {
                   const job2ActualNum = parseFloat(entry.secondJobActual) || 0;
 
                   return (
-                    <div key={s.id} className={isIdle ? 'idle-card' : ''} style={{ background: isIdle ? C.panelAlt : C.panel, border: `1px solid ${isCurrentlyPaused ? C.copper : (inboundEvents.length > 0 ? C.good : (isWeekendDay ? (theme === 'light' ? '#C7D2FE' : C.weekend) : C.border))}`, borderRadius: 10, padding: 16, boxShadow: C.cardShadow }}>
+                    <div
+                      key={s.id}
+                      className={isIdle ? 'idle-card' : ''}
+                      style={{
+                        background: isIdle ? C.panelAlt : C.panel,
+                        border: `1px solid ${isCurrentlyPaused ? C.copper : (inboundEvents.length > 0 ? C.good : (isWeekendDay ? (theme === 'light' ? '#C7D2FE' : C.weekend) : C.border))}`,
+                        borderLeft: `6px solid ${getGroupColor(s.group, C)}`,
+                        borderRadius: 10,
+                        padding: 16,
+                        boxShadow: C.cardShadow
+                      }}
+                    >
                       
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontWeight: 700, fontSize: 15.5, color: C.paper }}>{s.name}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                          <span style={{
+                            fontFamily: "'JetBrains Mono', monospace",
+                            fontSize: 13,
+                            fontWeight: 800,
+                            background: `${getGroupColor(s.group, C)}22`,
+                            color: getGroupColor(s.group, C),
+                            padding: '3px 8px',
+                            borderRadius: 6,
+                            border: `1px solid ${getGroupColor(s.group, C)}44`
+                          }}>
+                            #{String(sIdx + 1).padStart(2, '0')}
+                          </span>
+                          <span style={{ fontWeight: 800, fontSize: 18.5, color: C.paper, letterSpacing: -0.3 }}>{s.name}</span>
                           {isCurrentlyPaused && (
                             <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, background: C.warningBadgeBg, color: C.copper, border: `1px solid ${C.warningBadgeBorder}`, fontWeight: 800 }}>
                               ⏸️ BEKLEMEDE
@@ -2850,6 +3086,62 @@ function App({ currentUser, onLogout }) {
                               </div>
                             </div>
 
+                            {/* 1. İş İlerleme Göstergesi & Fiili Girişi */}
+                            <div style={{ marginTop: 8, padding: '8px 10px', background: C.panel, borderRadius: 6, border: `1px solid ${C.border}` }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{ fontSize: 11.5, fontWeight: 700, color: C.paper }}>⏱️ 1. İş İlerlemesi:</span>
+                                  <span style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: j1LiveProg.color }}>
+                                    Teorik: {j1LiveProg.label}
+                                  </span>
+                                </div>
+                                
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                  <span style={{ fontSize: 11, color: C.dim, fontWeight: 600 }}>Fiili İlerleme:</span>
+                                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max="100"
+                                      step="5"
+                                      placeholder="%"
+                                      value={entry.actualProgress ?? ''}
+                                      onChange={(e) => updateEntry(selectedKey, s.id, 'actualProgress', e.target.value)}
+                                      className="num-input num-input-sm"
+                                      style={{ width: 62, padding: '3px 6px', fontWeight: 800, color: C.good, textAlign: 'center' }}
+                                      title="Sahada gözlemlenen gerçek fiziki ilerleme yüzdesi (0-100)"
+                                    />
+                                    <span style={{ position: 'absolute', right: 6, fontSize: 11, color: C.dim, pointerEvents: 'none' }}>%</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div style={{ height: 7, background: C.trackBg, borderRadius: 4, overflow: 'hidden', position: 'relative' }}>
+                                {j1LiveProg.percent != null && (
+                                  <div style={{ position: 'absolute', height: '100%', width: `${j1LiveProg.percent}%`, background: j1LiveProg.color, opacity: 0.4, borderRadius: 4 }} title={`Teorik: %${j1LiveProg.percent}`} />
+                                )}
+                                {entry.actualProgress != null && entry.actualProgress !== '' && (
+                                  <div style={{ position: 'absolute', height: '100%', width: `${Math.min(Math.max(parseFloat(entry.actualProgress) || 0, 0), 100)}%`, background: C.good, borderRadius: 4 }} title={`Fiili: %${entry.actualProgress}`} />
+                                )}
+                              </div>
+
+                              {entry.actualProgress != null && entry.actualProgress !== '' && j1LiveProg.percent != null && (
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, fontSize: 10.5 }}>
+                                  {(() => {
+                                    const diff = (parseFloat(entry.actualProgress) || 0) - j1LiveProg.percent;
+                                    if (diff > 5) {
+                                      return <span style={{ color: C.good, fontWeight: 700 }}>🟢 Planın Önünde (+%{Math.round(diff)})</span>;
+                                    } else if (diff < -5) {
+                                      return <span style={{ color: C.bad, fontWeight: 700 }}>🔴 Plandan Geride (%{Math.round(Math.abs(diff))} geride)</span>;
+                                    } else {
+                                      return <span style={{ color: C.line, fontWeight: 700 }}>🔵 Planla Uyumlu</span>;
+                                    }
+                                  })()}
+                                  <span style={{ color: C.dim, fontSize: 10 }}>Mavi: Teorik (%{j1LiveProg.percent}) | Yeşil: Fiili (%{entry.actualProgress})</span>
+                                </div>
+                              )}
+                            </div>
+
                             {cDay?.isCarryover && job1ActualNum > 0 && (
                               <div style={{ fontSize: 11.5, color: C.copper, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", marginTop: 6, padding: '4px 8px', background: `${C.copper}15`, borderRadius: 4, border: `1px solid ${C.copper}33` }}>
                                 ↳ Harcanan {job1ActualNum.toFixed(1)} a-s, önceki günden devreden Vagon #{cDay.job1WagonNo || '—'} toplam eforuna eklenir.
@@ -3005,6 +3297,62 @@ function App({ currentUser, onLogout }) {
                                     {entry.secondJobActual ? `${parseFloat(entry.secondJobActual).toFixed(1)} a-s` : '—'}
                                   </div>
                                 </div>
+                              </div>
+
+                              {/* 2. İş İlerleme Göstergesi & Fiili Girişi */}
+                              <div style={{ marginTop: 8, padding: '8px 10px', background: C.panel, borderRadius: 6, border: `1px solid ${C.secondJobBorder}` }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ fontSize: 11.5, fontWeight: 700, color: C.secondJobHeader }}>⏱️ 2. İş İlerlemesi:</span>
+                                    <span style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: j2LiveProg?.color || C.dim }}>
+                                      Teorik: {j2LiveProg ? j2LiveProg.label : '—'}
+                                    </span>
+                                  </div>
+                                  
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                    <span style={{ fontSize: 11, color: C.dim, fontWeight: 600 }}>Fiili İlerleme:</span>
+                                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        step="5"
+                                        placeholder="%"
+                                        value={entry.secondJobActualProgress ?? ''}
+                                        onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobActualProgress', e.target.value)}
+                                        className="num-input num-input-sm"
+                                        style={{ width: 62, padding: '3px 6px', fontWeight: 800, color: C.secondJobHeader, textAlign: 'center' }}
+                                        title="2. iş için sahada gözlemlenen gerçek fiziki ilerleme yüzdesi (0-100)"
+                                      />
+                                      <span style={{ position: 'absolute', right: 6, fontSize: 11, color: C.dim, pointerEvents: 'none' }}>%</span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div style={{ height: 7, background: C.trackBg, borderRadius: 4, overflow: 'hidden', position: 'relative' }}>
+                                  {j2LiveProg?.percent != null && (
+                                    <div style={{ position: 'absolute', height: '100%', width: `${j2LiveProg.percent}%`, background: j2LiveProg.color, opacity: 0.4, borderRadius: 4 }} title={`Teorik: %${j2LiveProg.percent}`} />
+                                  )}
+                                  {entry.secondJobActualProgress != null && entry.secondJobActualProgress !== '' && (
+                                    <div style={{ position: 'absolute', height: '100%', width: `${Math.min(Math.max(parseFloat(entry.secondJobActualProgress) || 0, 0), 100)}%`, background: C.good, borderRadius: 4 }} title={`Fiili: %${entry.secondJobActualProgress}`} />
+                                  )}
+                                </div>
+
+                                {entry.secondJobActualProgress != null && entry.secondJobActualProgress !== '' && j2LiveProg?.percent != null && (
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, fontSize: 10.5 }}>
+                                    {(() => {
+                                      const diff = (parseFloat(entry.secondJobActualProgress) || 0) - j2LiveProg.percent;
+                                      if (diff > 5) {
+                                        return <span style={{ color: C.good, fontWeight: 700 }}>🟢 Planın Önünde (+%{Math.round(diff)})</span>;
+                                      } else if (diff < -5) {
+                                        return <span style={{ color: C.bad, fontWeight: 700 }}>🔴 Plandan Geride (%{Math.round(Math.abs(diff))} geride)</span>;
+                                      } else {
+                                        return <span style={{ color: C.line, fontWeight: 700 }}>🔵 Planla Uyumlu</span>;
+                                      }
+                                    })()}
+                                    <span style={{ color: C.dim, fontSize: 10 }}>Mavi: Teorik (%{j2LiveProg.percent}) | Yeşil: Fiili (%{entry.secondJobActualProgress})</span>
+                                  </div>
+                                )}
                               </div>
 
                               {cDay?.job2Status === 'in_progress' && cDay?.job2Remainder > 0.05 && (
@@ -3255,458 +3603,4 @@ function App({ currentUser, onLogout }) {
                           style={{ background: C.totalBoxBg, border: `1px solid ${C.totalBoxBorder}`, color: C.line, padding: '6px 14px', borderRadius: 8, fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, fontSize: 13.5, display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer' }}
                           title="Vagon Süreç Detayını Aç"
                         >
-                          <span>🚆 Teslimattaki Vagon:</span>
-                          <span style={{ color: C.paper, textDecoration: 'underline' }}>#{activeWagon}</span>
-                        </div>
-                      ) : null;
-                    })()}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 22 }}>
-              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: '16px 20px', boxShadow: C.cardShadow }}>
-                <GroupTag group="taslama" />
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, fontWeight: 800, color: C.groupTaslama, marginTop: 8 }}>
-                  {groupTotals.taslama.actual.toFixed(1)} <span style={{ fontSize: 13, color: C.dim }}>a-s</span>
-                </div>
-                <div style={{ fontSize: 12, color: C.dim, marginTop: 3 }}>Taşlama toplam gerçekleşen</div>
-              </div>
-              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: '16px 20px', boxShadow: C.cardShadow }}>
-                <GroupTag group="montaj" />
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, fontWeight: 800, color: C.groupMontaj, marginTop: 8 }}>
-                  {groupTotals.montaj.actual.toFixed(1)} <span style={{ fontSize: 13, color: C.dim }}>a-s</span>
-                </div>
-                <div style={{ fontSize: 12, color: C.dim, marginTop: 3 }}>Montaj toplam gerçekleşen</div>
-              </div>
-              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: '16px 20px', boxShadow: C.cardShadow }}>
-                <GroupTag group="kaynak" />
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, fontWeight: 800, color: C.groupKaynak, marginTop: 8 }}>
-                  {groupTotals.kaynak.actual.toFixed(1)} <span style={{ fontSize: 13, color: C.dim }}>a-s</span>
-                </div>
-                <div style={{ fontSize: 12, color: C.dim, marginTop: 3 }}>Kaynak toplam gerçekleşen</div>
-              </div>
-              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: '16px 20px', boxShadow: C.cardShadow }}>
-                <span style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: C.bad, border: `1px solid ${C.dangerBadgeBorder}`, background: C.dangerBadgeBg, borderRadius: 5, padding: '3px 7px', textTransform: 'uppercase', fontWeight: 700 }}>Devamsızlık</span>
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, fontWeight: 800, color: C.bad, marginTop: 8 }}>
-                  {absenteeismTotal.persons} <span style={{ fontSize: 13, color: C.dim }}>kişi-gün</span>
-                </div>
-                <div style={{ fontSize: 12, color: C.dim, marginTop: 3 }}>{absenteeismTotal.hours.toFixed(1)} adam-saat kayıp</div>
-              </div>
-              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: '16px 20px', boxShadow: C.cardShadow }}>
-                <span style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: C.copper, border: `1px solid ${C.warningBadgeBorder}`, background: C.warningBadgeBg, borderRadius: 5, padding: '3px 7px', textTransform: 'uppercase', fontWeight: 700 }}>Verim Kaybı</span>
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, fontWeight: 800, color: C.copper, marginTop: 8 }}>
-                  {lossTotal.toFixed(1)} <span style={{ fontSize: 13, color: C.dim }}>a-s</span>
-                </div>
-                <div style={{ fontSize: 12, color: C.dim, marginTop: 3 }}>Standardı aşan süre</div>
-              </div>
-            </div>
-
-            <div style={{ marginBottom: 22 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 10 }}>
-                Ek Mesai Gerekebilecek İstasyonlar
-              </div>
-              {overtimeStations.length === 0 ? (
-                <div style={{ background: C.successBadgeBg, border: `1px solid ${C.successBadgeBorder}`, borderRadius: 10, padding: 14, fontSize: 13.5, color: C.good, fontWeight: 600 }}>
-                  ✓ Bu hafta ek mesai gereken istasyon görünmüyor.
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {overtimeStations.map((s) => (
-                    <div key={s.id} style={{ background: C.dangerBadgeBg, border: `1px solid ${C.dangerBadgeBorder}`, borderRadius: 10, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <GroupTag group={s.group} />
-                        <span style={{ fontWeight: 700, fontSize: 14.5, color: C.paper }}>{s.name}</span>
-                      </div>
-                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: C.bad, fontWeight: 700 }}>
-                        ≈{s.totalCapacityShortfall.toFixed(1)} a-s kapasite açığı{s.avgPresent > 0 ? ` · ≈${(s.totalCapacityShortfall / s.avgPresent).toFixed(1)} saat/kişi` : ''}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 10 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.6 }}>Haftalık Özet — İstasyon Bazlı</span>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button onClick={printReport} style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, color: C.paper, padding: '8px 16px', fontSize: 13, cursor: 'pointer', fontWeight: 700, boxShadow: C.cardShadow }}>Yazdır / PDF</button>
-                <button onClick={exportCSV} style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, color: C.paper, padding: '8px 16px', fontSize: 13, cursor: 'pointer', fontWeight: 700, boxShadow: C.cardShadow }}>CSV İndir</button>
-              </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 12 }}>
-              {stationSummaries.map((s, i) => (
-                <div key={s.id} style={{ background: C.summaryCardBg, border: `1px solid ${C.border}`, borderRadius: 10, padding: '14px 16px', boxShadow: C.cardShadow, opacity: s.active === false ? 0.6 : 1 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: C.dim, fontWeight: 700 }}>{String(i + 1).padStart(2, '0')}</span>
-                      <span style={{ fontWeight: 700, fontSize: 14.5, color: C.paper }}>
-                        {s.name} {s.active === false && <span style={{ fontSize: 12, color: C.bad }}>(Pasif)</span>}
-                      </span>
-                    </div>
-                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 16, fontWeight: 800, color: effColor(s.avg, C) }}>
-                      {s.avg === null ? (s.idleDays > 0 ? 'Boşta' : '—') : `${Math.round(s.avg)}%`}
-                    </span>
-                  </div>
-                  <div style={{ marginBottom: 8 }}><GroupTag group={s.group} /></div>
-                  <DimensionBar eff={s.avg} />
-                  <div style={{ fontSize: 12, color: C.dim, marginTop: 10 }}>
-                    {s.days > 0 ? `${s.totalActual.toFixed(1)} a-s gerçekleşen${s.totalStandardExpected > 0 ? ` / ${s.totalStandardExpected.toFixed(1)} a-s hedef` : ''}` : (s.idleDays > 0 ? `${s.idleDays} gün planlı boşta` : 'Veri yok')}
-                  </div>
-                  {s.wagonsList && s.wagonsList.length > 0 && (
-                    <div style={{ marginTop: 10, paddingTop: 8, borderTop: `1px solid ${C.border}`, display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                      {s.wagonsList.map((w) => {
-                        const last = w.jobs[w.jobs.length - 1];
-                        const isDone = last.status === 'Tamamlandı';
-                        return (
-                          <span 
-                            key={w.name} 
-                            onClick={() => setSelectedWagonDetail(w.name)}
-                            title={`${last.day} - ${last.job}: ${last.status} (Tıkla Detayı Gör)`} 
-                            style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", padding: '3px 8px', borderRadius: 5, background: isDone ? C.successBadgeBg : C.warningBadgeBg, color: isDone ? C.good : C.copper, border: `1px solid ${isDone ? C.successBadgeBorder : C.warningBadgeBorder}`, fontWeight: 700, cursor: 'pointer' }}
-                          >
-                            🚆 #{w.name}: {isDone ? '✓' : '⏳'}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-
-        {mainView === 'wagons' && (
-          <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: 22, boxShadow: C.cardShadow }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 18 }}>
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 800, color: C.paper }}>🚆 Vagon İzleme Matrisi & Canlı İlerleme Takibi</div>
-                <div style={{ fontSize: 13, color: C.dim, marginTop: 2 }}>
-                  Devreden eforlar ve takviyeler dahil güncel saat referanslı tamamlanma durumu (Saat: <strong style={{ color: C.line }}>{minToTime(nowMin)}</strong>)
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button
-                  onClick={() => setWagonStatusFilter('all')}
-                  style={{ background: wagonStatusFilter === 'all' ? C.line : C.panelAlt, color: wagonStatusFilter === 'all' ? '#FFFFFF' : C.paper, border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}
-                >
-                  Tümü ({wagonsCatalog.length})
-                </button>
-                <button
-                  onClick={() => setWagonStatusFilter('in_progress')}
-                  style={{ background: wagonStatusFilter === 'in_progress' ? C.copper : C.panelAlt, color: wagonStatusFilter === 'in_progress' ? '#FFFFFF' : C.paper, border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}
-                >
-                  Devam Edenler ({wagonsCatalog.filter(w => w.latestStatus !== 'Tamamlandı').length})
-                </button>
-                <button
-                  onClick={() => setWagonStatusFilter('completed')}
-                  style={{ background: wagonStatusFilter === 'completed' ? C.good : C.panelAlt, color: wagonStatusFilter === 'completed' ? '#FFFFFF' : C.paper, border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}
-                >
-                  Tamamlananlar ({wagonsCatalog.filter(w => w.latestStatus === 'Tamamlandı').length})
-                </button>
-              </div>
-            </div>
-
-            {filteredWagons.length === 0 ? (
-              <div style={{ padding: '42px 0', textAlign: 'center', color: C.dim, fontSize: 14 }}>
-                Arama kriterine uygun vagon bulunamadı veya henüz vagon numarası girilmedi.
-              </div>
-            ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                  <thead>
-                    <tr style={{ borderBottom: `2px solid ${C.border}`, textAlign: 'left' }}>
-                      <th style={{ padding: '12px 14px', color: C.dim }}>Vagon No</th>
-                      <th style={{ padding: '12px 14px', color: C.dim }}>Başlangıç</th>
-                      <th style={{ padding: '12px 14px', color: C.dim }}>İstasyon Süreci & Adımlar</th>
-                      <th style={{ padding: '12px 14px', color: C.dim, minWidth: 180 }}>Canlı İş İlerlemesi</th>
-                      <th style={{ padding: '12px 14px', color: C.dim, textAlign: 'right' }}>Toplam a-s</th>
-                      <th style={{ padding: '12px 14px', color: C.dim, textAlign: 'center' }}>Verim</th>
-                      <th style={{ padding: '12px 14px', color: C.dim, textAlign: 'center' }}>Son Durum</th>
-                      <th style={{ padding: '12px 14px', color: C.dim, textAlign: 'right' }}>İşlem</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredWagons.map((w) => {
-                      const prog = w.liveProg || { percent: null, label: '—', color: C.dim };
-                      return (
-                        <tr key={w.wagonNo} style={{ borderBottom: `1px solid ${C.border}`, transition: 'background 0.15s' }}>
-                          <td style={{ padding: '14px', fontWeight: 800, color: C.line, fontFamily: "'JetBrains Mono', monospace", fontSize: 14.5 }}>
-                            🚆 #{w.wagonNo}
-                          </td>
-                          <td style={{ padding: '14px', color: C.paper, fontWeight: 600 }}>
-                            {w.firstDay}
-                          </td>
-                          <td style={{ padding: '14px' }}>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                              {w.steps.map((st, idx) => (
-                                <span key={idx} style={{ fontSize: 11.5, padding: '3px 8px', borderRadius: 5, background: st.isDone ? C.successBadgeBg : (st.isCurrentlyPaused ? C.warningBadgeBg : `${C.line}18`), color: st.isDone ? C.good : (st.isCurrentlyPaused ? C.copper : C.line), border: `1px solid ${st.isDone ? C.successBadgeBorder : (st.isCurrentlyPaused ? C.warningBadgeBorder : `${C.line}44`)}`, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                                  <span>{st.stationName}</span>
-                                  {st.isCarryContinuation && <span title="Dünden Devir Tamamlama">↷</span>}
-                                  {st.isCurrentlyPaused && <span title="İstasyon Beklemede">⏸️</span>}
-                                  {st.inboundReinforcements && st.inboundReinforcements.length > 0 && <span title="Takviye Alındı">📥</span>}
-                                </span>
-                              ))}
-                            </div>
-                          </td>
-
-                          <td style={{ padding: '14px' }}>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, color: prog.color }}>
-                                <span>{prog.label}</span>
-                              </div>
-                              {prog.percent != null ? (
-                                <div style={{ height: 8, background: C.trackBg, borderRadius: 4, overflow: 'hidden' }}>
-                                  <div style={{ height: '100%', width: `${prog.percent}%`, background: prog.color, borderRadius: 4, transition: 'width 0.4s ease' }} />
-                                </div>
-                              ) : (
-                                <span style={{ fontSize: 12, color: C.dim }}>Hesaplanıyor</span>
-                              )}
-                            </div>
-                          </td>
-
-                          <td style={{ padding: '14px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, color: C.paper, fontSize: 14 }}>
-                            {w.totalActual.toFixed(1)} a-s
-                          </td>
-                          <td style={{ padding: '14px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, color: effColor(w.overallEff, C), fontSize: 14 }}>
-                            {w.overallEff != null ? `${Math.round(w.overallEff)}%` : '—'}
-                          </td>
-                          <td style={{ padding: '14px', textAlign: 'center' }}>
-                            <span style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, background: w.latestStatus === 'Tamamlandı' ? C.successBadgeBg : (w.isPaused ? C.warningBadgeBg : C.panelAlt), color: w.latestStatus === 'Tamamlandı' ? C.good : (w.isPaused ? C.copper : C.paper), border: `1px solid ${w.latestStatus === 'Tamamlandı' ? C.successBadgeBorder : (w.isPaused ? C.warningBadgeBorder : C.border)}`, fontWeight: 700 }}>
-                              {w.latestStatus}
-                            </span>
-                          </td>
-                          <td style={{ padding: '14px', textAlign: 'right' }}>
-                            <button
-                              onClick={() => setSelectedWagonDetail(w.wagonNo)}
-                              style={{ background: C.headerBtnBg, border: `1px solid ${C.border}`, borderRadius: 6, color: C.line, padding: '5px 12px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}
-                            >
-                              Detay ➔
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {mainView === 'analytics' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-            
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: C.cardShadow }}>
-                <GroupTag group="taslama" />
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 800, color: C.groupTaslama, marginTop: 8 }}>
-                  {groupTotals.taslama.actual.toFixed(1)} <span style={{ fontSize: 13, color: C.dim }}>a-s</span>
-                </div>
-                <div style={{ fontSize: 12, color: C.dim, marginTop: 3 }}>Taşlama fiili hacmi</div>
-              </div>
-
-              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: C.cardShadow }}>
-                <GroupTag group="montaj" />
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 800, color: C.groupMontaj, marginTop: 8 }}>
-                  {groupTotals.montaj.actual.toFixed(1)} <span style={{ fontSize: 13, color: C.dim }}>a-s</span>
-                </div>
-                <div style={{ fontSize: 12, color: C.dim, marginTop: 3 }}>Montaj fiili hacmi</div>
-              </div>
-
-              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: C.cardShadow }}>
-                <GroupTag group="kaynak" />
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 800, color: C.groupKaynak, marginTop: 8 }}>
-                  {groupTotals.kaynak.actual.toFixed(1)} <span style={{ fontSize: 13, color: C.dim }}>a-s</span>
-                </div>
-                <div style={{ fontSize: 12, color: C.dim, marginTop: 3 }}>Kaynak fiili hacmi</div>
-              </div>
-
-              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: C.cardShadow }}>
-                <div style={{ fontSize: 12, color: C.dim, textTransform: 'uppercase', fontWeight: 700 }}>Ortalama Fabrika Verimi</div>
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 800, color: effColor(weekAvg, C), marginTop: 8 }}>
-                  {weekAvg === null ? '—' : Math.round(weekAvg)}%
-                </div>
-                <div style={{ fontSize: 12, color: C.dim, marginTop: 3 }}>Standart hedef karşılaştırması</div>
-              </div>
-
-              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: C.cardShadow }}>
-                <div style={{ fontSize: 12, color: C.dim, textTransform: 'uppercase', fontWeight: 700 }}>Duruş & Verim Kaybı</div>
-                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 800, color: C.copper, marginTop: 8 }}>
-                  {lossTotal.toFixed(1)} <span style={{ fontSize: 13, color: C.dim }}>a-s</span>
-                </div>
-                <div style={{ fontSize: 12, color: C.dim, marginTop: 3 }}>Standardı aşan kayıplar</div>
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 18 }}>
-              <TrendChart weekDates={weekDates} data={data} carryoverMap={carryoverMap} stations={data.stations} />
-              <ParetoChart downtimeSummary={downtimeSummary} />
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 18 }}>
-              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20, boxShadow: C.cardShadow }}>
-                <div style={{ fontSize: 14.5, fontWeight: 800, color: C.paper, marginBottom: 16 }}>⚖️ Taşlama vs. Montaj vs. Kaynak Bölüm Dağılımı</div>
-                
-                {(() => {
-                  const totActual = groupTotals.taslama.actual + groupTotals.montaj.actual + groupTotals.kaynak.actual;
-                  const safeTot = Math.max(totActual, 1);
-                  const pTaslama = Math.round((groupTotals.taslama.actual / safeTot) * 100);
-                  const pMontaj = Math.round((groupTotals.montaj.actual / safeTot) * 100);
-                  const pKaynak = Math.round((groupTotals.kaynak.actual / safeTot) * 100);
-
-                  return (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                      <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 5 }}>
-                          <span style={{ fontWeight: 700, color: C.groupTaslama, display: 'flex', alignItems: 'center', gap: 5 }}>
-                            <span>🧽</span> Taşlama Bölümü
-                          </span>
-                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, color: C.groupTaslama }}>
-                            {groupTotals.taslama.actual.toFixed(1)} a-s (%{pTaslama})
-                          </span>
-                        </div>
-                        <div style={{ height: 11, background: C.trackBg, borderRadius: 6, overflow: 'hidden' }}>
-                          <div style={{ height: '100%', width: `${Math.min((groupTotals.taslama.actual / safeTot) * 100, 100)}%`, background: C.groupTaslama, borderRadius: 6 }} />
-                        </div>
-                      </div>
-
-                      <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 5 }}>
-                          <span style={{ fontWeight: 700, color: C.groupMontaj, display: 'flex', alignItems: 'center', gap: 5 }}>
-                            <span>🔩</span> Montaj Bölümü
-                          </span>
-                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, color: C.groupMontaj }}>
-                            {groupTotals.montaj.actual.toFixed(1)} a-s (%{pMontaj})
-                          </span>
-                        </div>
-                        <div style={{ height: 11, background: C.trackBg, borderRadius: 6, overflow: 'hidden' }}>
-                          <div style={{ height: '100%', width: `${Math.min((groupTotals.montaj.actual / safeTot) * 100, 100)}%`, background: C.groupMontaj, borderRadius: 6 }} />
-                        </div>
-                      </div>
-
-                      <div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 5 }}>
-                          <span style={{ fontWeight: 700, color: C.groupKaynak, display: 'flex', alignItems: 'center', gap: 5 }}>
-                            <span>⚡</span> Kaynak Bölümü
-                          </span>
-                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, color: C.groupKaynak }}>
-                            {groupTotals.kaynak.actual.toFixed(1)} a-s (%{pKaynak})
-                          </span>
-                        </div>
-                        <div style={{ height: 11, background: C.trackBg, borderRadius: 6, overflow: 'hidden' }}>
-                          <div style={{ height: '100%', width: `${Math.min((groupTotals.kaynak.actual / safeTot) * 100, 100)}%`, background: C.groupKaynak, borderRadius: 6 }} />
-                        </div>
-                      </div>
-
-                      <div style={{ marginTop: 8, paddingTop: 12, borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', fontSize: 12.5, color: C.dim }}>
-                        <span>Toplam Fabrika İş Hacmi:</span>
-                        <strong style={{ color: C.paper, fontFamily: "'JetBrains Mono', monospace" }}>{totActual.toFixed(1)} a-s</strong>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-
-              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20, boxShadow: C.cardShadow }}>
-                <div style={{ fontSize: 14.5, fontWeight: 800, color: C.paper, marginBottom: 16 }}>🏆 Haftanın En Yüksek Verimli İstasyonları</div>
-                
-                {topStations.length === 0 ? (
-                  <div style={{ padding: '24px 0', textAlign: 'center', color: C.dim, fontSize: 13 }}>Bu hafta için henüz verim verisi bulunmuyor.</div>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {topStations.map((s, idx) => {
-                      const medal = idx === 0 ? '🥇' : (idx === 1 ? '🥈' : '🥉');
-                      return (
-                        <div key={s.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: C.panelAlt, border: `1px solid ${C.border}`, borderRadius: 8 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <span style={{ fontSize: 22 }}>{medal}</span>
-                            <div>
-                              <div style={{ fontWeight: 700, fontSize: 14, color: C.paper }}>{s.name}</div>
-                              <GroupTag group={s.group} />
-                            </div>
-                          </div>
-                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 18, fontWeight: 800, color: effColor(s.avg, C) }}>
-                            {Math.round(s.avg)}%
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div style={{ marginTop: 32, fontSize: 12.5, color: C.dim, textAlign: 'center' }}>
-          Epsilon Solentek İstasyon Verim Panosu · Firebase Cloud Veritabanı
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Root() {
-  const [authState, setAuthState] = useState('loading');
-  const [currentUser, setCurrentUser] = useState(null);
-  const [themeMode, setThemeMode] = useState(() => {
-    return localStorage.getItem('est_app_theme') || 'light';
-  });
-
-  const toggleTheme = () => {
-    setThemeMode((prev) => {
-      const next = prev === 'light' ? 'dark' : 'light';
-      localStorage.setItem('est_app_theme', next);
-      return next;
-    });
-  };
-
-  const C = THEMES[themeMode] || THEMES.light;
-
-  useEffect(() => {
-    document.body.setAttribute('data-theme', themeMode);
-    document.body.style.backgroundColor = C.page;
-    document.body.style.color = C.paper;
-  }, [themeMode, C.page, C.paper]);
-
-  useEffect(() => {
-    const unsub = auth.onAuthStateChanged((user) => {
-      setCurrentUser(user);
-      setAuthState(user ? 'signed-in' : 'signed-out');
-    });
-    return unsub;
-  }, []);
-
-  const contextValue = useMemo(() => ({
-    theme: themeMode,
-    toggleTheme,
-    C
-  }), [themeMode, C]);
-
-  if (authState === 'loading') {
-    return (
-      <div style={{ minHeight: '100vh', background: C.page, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.dim, fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
-        Yükleniyor…
-      </div>
-    );
-  }
-
-  return (
-    <ThemeContext.Provider value={contextValue}>
-      {authState === 'signed-out' ? (
-        <LoginScreen />
-      ) : (
-        <App currentUser={currentUser} onLogout={() => auth.signOut()} />
-      )}
-    </ThemeContext.Provider>
-  );
-}
-
-ReactDOM.createRoot(document.getElementById('root')).render(<Root />);
-</script>
-</body>
-</html>
+      
