@@ -826,6 +826,9 @@ function WagonDetailModal({ wagon, nowMin, onClose }) {
                   {step.actualProgress != null && liveProg.percent != null && (
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2, paddingTop: 6, borderTop: `1px dashed ${C.border}`, fontSize: 11 }}>
                       {(() => {
+                        if (step.isDone) {
+                          return <span style={{ color: C.good, fontWeight: 700 }}>✓ İş Tamamlandı (%100)</span>;
+                        }
                         const diff = step.actualProgress - liveProg.percent;
                         if (diff > 5) {
                           return <span style={{ color: C.good, fontWeight: 700 }}>🟢 Planın Önünde (+%{Math.round(diff)})</span>;
@@ -1349,9 +1352,16 @@ function App({ currentUser, onLogout }) {
       if (endMin != null) {
         const dyn = calcDynamicSegmentsActual(startMin, endMin, timeline.baseStaff, timeline.events);
         patch.actual = dyn.totalActual;
+        if (merged.job1Status !== 'in_progress') {
+          patch.actualProgress = 100;
+        }
       }
     } else if (field === 'actualEndTime' && !value) {
       patch.actual = '';
+    }
+
+    if (field === 'job1Status' && value === 'completed' && merged.actualEndTime) {
+      patch.actualProgress = 100;
     }
 
     if (merged.hasSecondJob && merged.secondJobActualEndTime && !merged.isIdle) {
@@ -1360,9 +1370,16 @@ function App({ currentUser, onLogout }) {
       if (endMin2 != null && timeline.baseStaff > 0) {
         const workMin2 = workMinutesBetween(startMin2, endMin2, ALL_BLOCKS);
         patch.secondJobActual = Math.round(((workMin2 * timeline.baseStaff) / 60) * 100) / 100;
+        if (merged.secondJobStatus !== 'in_progress') {
+          patch.secondJobActualProgress = 100;
+        }
       }
     } else if (field === 'secondJobActualEndTime' && !value) {
       patch.secondJobActual = '';
+    }
+
+    if (field === 'secondJobStatus' && value === 'completed' && merged.secondJobActualEndTime) {
+      patch.secondJobActualProgress = 100;
     }
     
     setData((prev) => {
@@ -1861,7 +1878,7 @@ function App({ currentUser, onLogout }) {
             hasStaffShift: timeline.events.length > 0,
             currentStaffNow,
             segments: dyn.segments,
-            actualProgress: e.actualProgress != null && e.actualProgress !== '' ? parseFloat(e.actualProgress) : null,
+            actualProgress: isDone ? 100 : (e.actualProgress != null && e.actualProgress !== '' ? parseFloat(e.actualProgress) : null),
             downtimeReason: e.downtimeReason
           });
 
@@ -1916,7 +1933,7 @@ function App({ currentUser, onLogout }) {
               isCurrentlyPaused: false,
               inboundReinforcements: [],
               hasStaffShift: false,
-              actualProgress: e.secondJobActualProgress != null && e.secondJobActualProgress !== '' ? parseFloat(e.secondJobActualProgress) : null,
+              actualProgress: isDone2 ? 100 : (e.secondJobActualProgress != null && e.secondJobActualProgress !== '' ? parseFloat(e.secondJobActualProgress) : null),
               downtimeReason: e.downtimeReason
             });
             map[w2].totalActual += j2Act;
@@ -1942,7 +1959,8 @@ function App({ currentUser, onLogout }) {
         overallEff,
         liveProg,
         latestActualProgress,
-        isPaused: lastStep?.isCurrentlyPaused
+        isPaused: lastStep?.isCurrentlyPaused,
+        isLastStepDone: lastStep?.isDone
       };
     }).sort((a, b) => a.wagonNo.localeCompare(b.wagonNo, undefined, { numeric: true }));
   }, [data, weekDates, carryoverMap, nowMin]);
@@ -2751,6 +2769,8 @@ function App({ currentUser, onLogout }) {
 
                   const j1LiveProg = calcLiveProgress(j1StartMin, j1Est?.finishMin, isJob1Completed, nowMin);
                   const j2LiveProg = hasJob2 ? calcLiveProgress(j2StartMin, j2Est?.finishMin, isJob2Completed, nowMin) : null;
+                  const j1ActualProgressVal = isJob1Completed ? 100 : (entry.actualProgress != null && entry.actualProgress !== '' ? parseFloat(entry.actualProgress) : null);
+                  const j2ActualProgressVal = isJob2Completed ? 100 : (entry.secondJobActualProgress != null && entry.secondJobActualProgress !== '' ? parseFloat(entry.secondJobActualProgress) : null);
 
                   const isCardFullyFinishedOnTime = hasJob2 ? isJob2FinishedWithinShift : isJob1FinishedWithinShift;
                   const activeEst = hasJob2 ? (isJob2Completed ? null : j2Est) : (isJob1Completed ? null : j1Est);
@@ -3157,7 +3177,7 @@ function App({ currentUser, onLogout }) {
                                         max="100"
                                         step="5"
                                         placeholder="%"
-                                        value={entry.actualProgress ?? ''}
+                                        value={isJob1Completed ? 100 : (entry.actualProgress ?? '')}
                                         onChange={(e) => updateEntry(selectedKey, s.id, 'actualProgress', e.target.value)}
                                         className="num-input num-input-sm"
                                         style={{ width: 62, padding: '3px 6px', fontWeight: 800, color: C.good, textAlign: 'center', fontSize: 12 }}
@@ -3171,21 +3191,24 @@ function App({ currentUser, onLogout }) {
                                   <div
                                     style={{
                                       height: '100%',
-                                      width: `${Math.min(Math.max(parseFloat(entry.actualProgress) || 0, 0), 100)}%`,
+                                      width: `${j1ActualProgressVal ?? 0}%`,
                                       background: C.good,
                                       borderRadius: 4,
                                       transition: 'width 0.3s ease'
                                     }}
-                                    title={`Fiili İlerleme: %${entry.actualProgress ?? 0}`}
+                                    title={`Fiili İlerleme: %${j1ActualProgressVal ?? 0}`}
                                   />
                                 </div>
                               </div>
 
                               {/* Kıyaslama Özeti */}
-                              {entry.actualProgress != null && entry.actualProgress !== '' && j1LiveProg.percent != null && (
+                              {j1ActualProgressVal != null && j1LiveProg.percent != null && (
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2, paddingTop: 6, borderTop: `1px dashed ${C.border}`, fontSize: 11 }}>
                                   {(() => {
-                                    const diff = (parseFloat(entry.actualProgress) || 0) - j1LiveProg.percent;
+                                    if (isJob1Completed) {
+                                      return <span style={{ color: C.good, fontWeight: 700 }}>✓ İş Tamamlandı (%100)</span>;
+                                    }
+                                    const diff = j1ActualProgressVal - j1LiveProg.percent;
                                     if (diff > 5) {
                                       return <span style={{ color: C.good, fontWeight: 700 }}>🟢 Planın Önünde (+%{Math.round(diff)})</span>;
                                     } else if (diff < -5) {
@@ -3195,7 +3218,7 @@ function App({ currentUser, onLogout }) {
                                     }
                                   })()}
                                   <span style={{ color: C.dim, fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>
-                                    Teorik: %{j1LiveProg.percent} ➔ Fiili: %{entry.actualProgress}
+                                    Teorik: %{j1LiveProg.percent} ➔ Fiili: %{j1ActualProgressVal}
                                   </span>
                                 </div>
                               )}
@@ -3400,7 +3423,7 @@ function App({ currentUser, onLogout }) {
                                           max="100"
                                           step="5"
                                           placeholder="%"
-                                          value={entry.secondJobActualProgress ?? ''}
+                                          value={isJob2Completed ? 100 : (entry.secondJobActualProgress ?? '')}
                                           onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobActualProgress', e.target.value)}
                                           className="num-input num-input-sm"
                                           style={{ width: 62, padding: '3px 6px', fontWeight: 800, color: C.secondJobHeader, textAlign: 'center', fontSize: 12 }}
@@ -3414,21 +3437,24 @@ function App({ currentUser, onLogout }) {
                                     <div
                                       style={{
                                         height: '100%',
-                                        width: `${Math.min(Math.max(parseFloat(entry.secondJobActualProgress) || 0, 0), 100)}%`,
+                                        width: `${j2ActualProgressVal ?? 0}%`,
                                         background: C.good,
                                         borderRadius: 4,
                                         transition: 'width 0.3s ease'
                                       }}
-                                      title={`2. İş Fiili: %${entry.secondJobActualProgress ?? 0}`}
+                                      title={`2. İş Fiili: %${j2ActualProgressVal ?? 0}`}
                                     />
                                   </div>
                                 </div>
 
                                 {/* Kıyaslama Özeti */}
-                                {entry.secondJobActualProgress != null && entry.secondJobActualProgress !== '' && j2LiveProg?.percent != null && (
+                                {j2ActualProgressVal != null && j2LiveProg?.percent != null && (
                                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2, paddingTop: 6, borderTop: `1px dashed ${C.border}`, fontSize: 11 }}>
                                     {(() => {
-                                      const diff = (parseFloat(entry.secondJobActualProgress) || 0) - j2LiveProg.percent;
+                                      if (isJob2Completed) {
+                                        return <span style={{ color: C.good, fontWeight: 700 }}>✓ 2. İş Tamamlandı (%100)</span>;
+                                      }
+                                      const diff = j2ActualProgressVal - j2LiveProg.percent;
                                       if (diff > 5) {
                                         return <span style={{ color: C.good, fontWeight: 700 }}>🟢 Planın Önünde (+%{Math.round(diff)})</span>;
                                       } else if (diff < -5) {
@@ -3438,7 +3464,7 @@ function App({ currentUser, onLogout }) {
                                       }
                                     })()}
                                     <span style={{ color: C.dim, fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>
-                                      Teorik: %{j2LiveProg.percent} ➔ Fiili: %{entry.secondJobActualProgress}
+                                      Teorik: %{j2LiveProg.percent} ➔ Fiili: %{j2ActualProgressVal}
                                     </span>
                                   </div>
                                 )}
@@ -3910,7 +3936,9 @@ function App({ currentUser, onLogout }) {
                               </div>
                               {w.latestActualProgress != null && prog.percent != null && (
                                 <div style={{ fontSize: 10.5, fontWeight: 700 }}>
-                                  {w.latestActualProgress > prog.percent + 5 ? (
+                                  {w.isLastStepDone ? (
+                                    <span style={{ color: C.good }}>✓ İstasyon Tamamlandı (%100)</span>
+                                  ) : w.latestActualProgress > prog.percent + 5 ? (
                                     <span style={{ color: C.good }}>🟢 Planın Önünde (+%{Math.round(w.latestActualProgress - prog.percent)})</span>
                                   ) : w.latestActualProgress < prog.percent - 5 ? (
                                     <span style={{ color: C.bad }}>🔴 Plandan Geride (%{Math.round(prog.percent - w.latestActualProgress)} geride)</span>
