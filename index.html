@@ -2,7 +2,12 @@
 <html lang="tr">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#0284C7" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Verim Panosu" />
+<link rel="manifest" href="manifest.json" />
 <title>İstasyon Verim Panosu - Epsilon Solentek</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='bg' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%230284C7'/%3E%3Cstop offset='100%25' stop-color='%230F172A'/%3E%3C/linearGradient%3E%3ClinearGradient id='glass' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0%25' stop-color='%230F172A'/%3E%3Cstop offset='100%25' stop-color='%231E293B'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23bg)'/%3E%3Cpath d='M12 54 L52 54 M20 54 L14 60 M44 54 L50 60 M28 54 L26 60 M36 54 L38 60' stroke='%2338BDF8' stroke-width='2.5' stroke-linecap='round'/%3E%3Cpath d='M18 46 L18 20 C18 13 22 10 32 10 C42 10 46 13 46 20 L46 46 C46 48 44 50 42 50 L22 50 C20 50 18 48 18 46 Z' fill='%23FFFFFF'/%3E%3Cpath d='M22 18 C22 15 25 14 32 14 C39 14 42 15 42 18 L42 27 C42 28 41 29 40 29 L24 29 C23 29 22 28 22 27 Z' fill='url(%23glass)'/%3E%3Cpath d='M25 17 L29 27 M33 17 L37 27' stroke='%2338BDF8' stroke-width='1.2' opacity='0.6' stroke-linecap='round'/%3E%3Crect x='25' y='39' width='14' height='4' rx='2' fill='%230284C7'/%3E%3Ccircle cx='23' cy='35' r='3.2' fill='%23FACC15'/%3E%3Ccircle cx='41' cy='35' r='3.2' fill='%23FACC15'/%3E%3Ccircle cx='32' cy='12' r='2' fill='%2338BDF8'/%3E%3C/svg%3E" />
 <link rel="alternate icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%230284C7'/%3E%3Ctext x='50%25' y='55%25' font-size='38' text-anchor='middle' dominant-baseline='central'%3E🚆%3C/text%3E%3C/svg%3E" />
@@ -27,6 +32,15 @@
       }
     } catch (e) {}
   })();
+</script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('./sw.js').catch(function(err) {
+        console.log('SW registration error:', err);
+      });
+    });
+  }
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -112,6 +126,50 @@
     opacity: 0.65;
     background: #F8FAFC !important;
     border-color: #E2E8F0 !important;
+  }
+
+  /* Mobil ve PWA Optimizasyonları */
+  html {
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    -webkit-touch-callout: none;
+  }
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .mobile-touch-card {
+    transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease;
+  }
+  .mobile-touch-card:active {
+    transform: scale(0.985);
+  }
+  .mobile-pill-btn {
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .mobile-pill-btn:active {
+    transform: scale(0.95);
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .animate-fade-in {
+    animation: fadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+  @keyframes slideUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+  .animate-slide-up {
+    animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   }
 </style>
 </head>
@@ -1133,6 +1191,60 @@ function App({ currentUser, onLogout }) {
 
   const [draggedIndex, setDraggedIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
+
+  // PWA & Mobil Durum Yönetimi
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [isInstalled, setIsInstalled] = useState(false);
+  const [showInstallBanner, setShowInstallBanner] = useState(true);
+  const [isIos, setIsIos] = useState(false);
+  const [showIosGuide, setShowIosGuide] = useState(false);
+  
+  const [isMobileScreen, setIsMobileScreen] = useState(() => window.innerWidth <= 768);
+  const [forceMobileMode, setForceMobileMode] = useState(null); // null: otomatik, true: mobil, false: masaüstü
+  const isMobile = forceMobileMode !== null ? forceMobileMode : isMobileScreen;
+
+  const [mobileGroupFilter, setMobileGroupFilter] = useState('all');
+  const [expandedStationId, setExpandedStationId] = useState(null);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobileScreen(window.innerWidth <= 768);
+    window.addEventListener('resize', handleResize);
+
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    setIsInstalled(isStandalone);
+
+    const isIosDevice = /iphone|ipad|ipod/.test(window.navigator.userAgent.toLowerCase());
+    setIsIos(isIosDevice);
+
+    const handleBeforeInstall = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('appinstalled', () => {
+      setIsInstalled(true);
+      setDeferredPrompt(null);
+    });
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') setIsInstalled(true);
+      setDeferredPrompt(null);
+    } else if (isIos) {
+      setShowIosGuide(true);
+    } else {
+      alert("Pano uygulamasını telefonunuza kurmak için tarayıcı menüsünden (⋮) 'Ana Ekrana Ekle' veya 'Uygulamayı Yükle' seçeneğini seçebilirsiniz.");
+    }
+  };
   
   const [currentWallTime, setCurrentWallTime] = useState(() => new Date());
   useEffect(() => {
@@ -2180,11 +2292,225 @@ function App({ currentUser, onLogout }) {
   }, [data.stations, showInactiveStations]);
 
   return (
-    <div style={{ minHeight: '100vh', padding: '24px 20px 64px' }}>
+    <div style={{ minHeight: '100vh', padding: isMobile ? '12px 12px 90px' : '24px 20px 64px' }}>
       <div style={{ maxWidth: 1180, margin: '0 auto' }}>
 
-        <div style={{ border: `1px solid ${C.border}`, background: C.panel, borderRadius: 12, marginBottom: 18, display: 'flex', flexWrap: 'wrap', overflow: 'hidden', boxShadow: C.cardShadow }}>
-          <TitleCell label="Proje" minWidth={230}>
+        {/* PWA Kurulum Bildirimi */}
+        {isMobile && !isInstalled && showInstallBanner && (
+          <div style={{
+            background: theme === 'light' ? '#F0F9FF' : '#0C2033',
+            border: `1px solid ${C.line}44`,
+            borderRadius: 12,
+            padding: '10px 14px',
+            marginBottom: 12,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            boxShadow: C.cardShadow
+          }} className="animate-fade-in">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+              <span style={{ fontSize: 24 }}>🚆</span>
+              <div>
+                <div style={{ fontWeight: 800, color: C.paper, fontSize: 13.5 }}>Verim Panosu'nu Yükle</div>
+                <div style={{ fontSize: 11, color: C.dim }}>Telefonda tam ekran ve hızlı açılış</div>
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <button
+                onClick={handleInstallClick}
+                style={{
+                  background: C.line,
+                  border: 'none',
+                  color: '#FFF',
+                  fontWeight: 800,
+                  fontSize: 12,
+                  padding: '6px 14px',
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+                className="mobile-pill-btn"
+              >
+                Yükle
+              </button>
+              <button
+                onClick={() => setShowInstallBanner(false)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: C.dim,
+                  fontSize: 16,
+                  cursor: 'pointer',
+                  padding: '4px 6px'
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* iOS Kurulum Rehberi */}
+        {showIosGuide && (
+          <div style={{ position: 'fixed', inset: 0, background: C.modalOverlay, backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+            <div style={{ background: C.modalCardBg, border: `1px solid ${C.border}`, borderRadius: 16, maxWidth: 360, width: '100%', padding: 22, textAlign: 'center', boxShadow: C.cardShadow }} className="animate-fade-in">
+              <div style={{ fontSize: 36, marginBottom: 10 }}>📲</div>
+              <div style={{ fontWeight: 800, fontSize: 16, color: C.paper, marginBottom: 8 }}>iPhone'a Uygulama Olarak Ekle</div>
+              <div style={{ fontSize: 13, color: C.dim, lineHeight: 1.6, textAlign: 'left', marginBottom: 18, background: C.panelAlt, padding: 14, borderRadius: 10 }}>
+                1. Safari'nin altındaki <strong>Paylaş (Share) ⎋</strong> simgesine dokunun.<br/>
+                2. Açılan menüyü yukarı kaydırıp <strong>"Ana Ekrana Ekle" (Add to Home Screen)</strong> seçeneğini seçin.<br/>
+                3. Sağ üstteki <strong>"Ekle"</strong> butonuna basın.
+              </div>
+              <button onClick={() => setShowIosGuide(false)} style={{ width: '100%', padding: '10px 0', background: C.line, border: 'none', borderRadius: 8, color: '#FFF', fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>Anladım</button>
+            </div>
+          </div>
+        )}
+
+        {/* Mobil Üst Bar */}
+        {isMobile && (
+          <div className="animate-fade-in" style={{ marginBottom: 12 }}>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: '10px 14px',
+              background: C.panel,
+              border: `1px solid ${C.border}`,
+              borderRadius: 14,
+              marginBottom: 10,
+              boxShadow: C.cardShadow
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                <span style={{ fontSize: 24 }}>🚆</span>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 15, color: C.paper, letterSpacing: -0.2 }}>Epsilon Solentek</div>
+                  <div style={{ fontSize: 11, color: C.dim, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span>Verim Panosu</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: connected ? C.good : C.bad, fontWeight: 700 }}>
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: connected ? C.good : C.bad }} />
+                      {connected ? 'Canlı' : 'Çevrimdışı'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <button
+                  onClick={() => setForceMobileMode(false)}
+                  style={{ background: C.headerBtnBg, border: `1px solid ${C.border}`, borderRadius: 8, padding: '6px 10px', color: C.dim, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
+                  title="Masaüstü Pano Görünümüne Geç"
+                >
+                  💻 Pano
+                </button>
+                <button
+                  onClick={toggleTheme}
+                  style={{ background: C.headerBtnBg, border: `1px solid ${C.border}`, borderRadius: 8, padding: '6px 10px', color: C.paper, fontSize: 13, cursor: 'pointer' }}
+                >
+                  {theme === 'light' ? '🌙' : '☀️'}
+                </button>
+                <button
+                  onClick={() => auth.signOut()}
+                  style={{ background: C.headerBtnBg, border: `1px solid ${C.border}`, borderRadius: 8, padding: '6px 9px', color: C.dim, fontSize: 11.5, cursor: 'pointer' }}
+                >
+                  Çıkış
+                </button>
+              </div>
+            </div>
+
+            {/* Mobil Tarih Seçici */}
+            <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, padding: '10px 12px', marginBottom: 10, boxShadow: C.cardShadow }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, fontSize: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button onClick={() => setWeekStart(w => addDays(w, -7))} style={{ background: C.headerBtnBg, border: `1px solid ${C.border}`, borderRadius: 6, color: C.paper, padding: '2px 8px', fontSize: 13, cursor: 'pointer' }}>‹</button>
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: C.paper }}>{formatRange(weekStart)}</span>
+                  <button onClick={() => setWeekStart(w => addDays(w, 7))} style={{ background: C.headerBtnBg, border: `1px solid ${C.border}`, borderRadius: 6, color: C.paper, padding: '2px 8px', fontSize: 13, cursor: 'pointer' }}>›</button>
+                </div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, color: C.line, fontSize: 12 }}>
+                  Ort: {weekAvg === null ? '—' : `%${Math.round(weekAvg)}`}
+                </div>
+              </div>
+              
+              {/* Gün Hapları */}
+              <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 }} className="hide-scrollbar">
+                {weekDates.map((d, i) => {
+                  const active = i === dayIndex;
+                  const hasData = hasDataForDate(d);
+                  const isWeekend = i === 5 || i === 6;
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => setDayIndex(i)}
+                      style={{
+                        flex: '1 0 0',
+                        minWidth: 42,
+                        padding: '7px 4px',
+                        borderRadius: 10,
+                        background: active ? C.line : (isWeekend ? `${C.weekend}15` : C.panelAlt),
+                        border: active ? `1px solid ${C.line}` : `1px solid ${isWeekend ? `${C.weekend}44` : C.border}`,
+                        color: active ? '#FFFFFF' : (isWeekend ? C.weekend : C.paper),
+                        cursor: 'pointer',
+                        textAlign: 'center',
+                        boxShadow: active ? '0 2px 8px rgba(2, 132, 199, 0.35)' : 'none'
+                      }}
+                      className="mobile-pill-btn"
+                    >
+                      <div style={{ fontSize: 11, fontWeight: 700, opacity: active ? 0.95 : 0.7 }}>{DAY_NAMES[i]}</div>
+                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 800, marginTop: 1 }}>{d.getDate()}</div>
+                      {hasData && !active && <div style={{ width: 4, height: 4, borderRadius: '50%', background: C.good, margin: '2px auto 0' }} />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Mobil Kategori Filtreleri */}
+            {mainView === 'dashboard' && (
+              <div style={{ display: 'flex', gap: 6, marginBottom: 8, overflowX: 'auto', paddingBottom: 2 }} className="hide-scrollbar">
+                {[
+                  { id: 'all', label: 'Tümü', icon: '🏭', count: data.stations.filter(s => s.active !== false).length },
+                  { id: 'taslama', label: 'Taşlama', icon: '🧽', count: data.stations.filter(s => s.active !== false && s.group === 'taslama').length },
+                  { id: 'montaj', label: 'Montaj', icon: '🔩', count: data.stations.filter(s => s.active !== false && s.group === 'montaj').length },
+                  { id: 'kaynak', label: 'Kaynak', icon: '⚡', count: data.stations.filter(s => s.active !== false && s.group === 'kaynak').length }
+                ].map(g => {
+                  const isSelected = mobileGroupFilter === g.id;
+                  return (
+                    <button
+                      key={g.id}
+                      onClick={() => setMobileGroupFilter(g.id)}
+                      style={{
+                        flex: '0 0 auto',
+                        padding: '6px 12px',
+                        borderRadius: 20,
+                        background: isSelected ? C.line : C.panel,
+                        border: `1px solid ${isSelected ? C.line : C.border}`,
+                        color: isSelected ? '#FFFFFF' : C.paper,
+                        fontWeight: 700,
+                        fontSize: 12,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        cursor: 'pointer',
+                        boxShadow: isSelected ? '0 2px 6px rgba(2, 132, 199, 0.25)' : C.cardShadow
+                      }}
+                      className="mobile-pill-btn"
+                    >
+                      <span>{g.icon}</span>
+                      <span>{g.label}</span>
+                      <span style={{ fontSize: 10.5, opacity: 0.85, background: isSelected ? 'rgba(255,255,255,0.25)' : C.trackBg, padding: '1px 5px', borderRadius: 8 }}>
+                        {g.count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {!isMobile && (
+          <div style={{ border: `1px solid ${C.border}`, background: C.panel, borderRadius: 12, marginBottom: 18, display: 'flex', flexWrap: 'wrap', overflow: 'hidden', boxShadow: C.cardShadow }}>
+            <TitleCell label="Proje" minWidth={230}>
             <div style={{ fontWeight: 800, fontSize: 19, color: C.paper, letterSpacing: -0.2 }}>İstasyon Verim Panosu</div>
             <div style={{ fontSize: 13, color: C.dim, marginTop: 2 }}>Epsilon Solentek Raylı Sistemler</div>
           </TitleCell>
@@ -2314,6 +2640,51 @@ function App({ currentUser, onLogout }) {
             >
               <span style={{ fontSize: 15 }}>⚙️</span> İstasyonlar ({displayedStations.length})
             </button>
+
+            <button
+              onClick={() => setForceMobileMode(true)}
+              style={{
+                background: C.headerBtnBg,
+                border: `1px solid ${C.border}`,
+                borderRadius: 8,
+                color: C.line,
+                padding: '7px 14px',
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                boxShadow: C.cardShadow
+              }}
+              title="Mobil Saha Görünümünü Aç"
+            >
+              <span style={{ fontSize: 15 }}>📱</span> Mobil Mod
+            </button>
+
+            {!isInstalled && (
+              <button
+                onClick={handleInstallClick}
+                style={{
+                  background: `${C.line}22`,
+                  border: `1px solid ${C.line}55`,
+                  borderRadius: 8,
+                  color: C.line,
+                  padding: '7px 14px',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 7,
+                  boxShadow: C.cardShadow
+                }}
+                title="Pano Uygulamasını Cihaza Kur"
+              >
+                <span style={{ fontSize: 15 }}>📲</span> Yükle
+              </button>
+            )}
+
             <button onClick={() => auth.signOut()} style={{ background: C.headerBtnBg, border: `1px solid ${C.border}`, borderRadius: 8, color: C.dim, padding: '7px 14px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>Çıkış</button>
           </div>
         </div>
@@ -2388,6 +2759,7 @@ function App({ currentUser, onLogout }) {
             <span style={{ fontSize: 18 }}>📊</span> Yönetici Grafikleri & KPI
           </button>
         </div>
+        )}
 
         {showWeekendModal && (
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: C.modalOverlay, backdropFilter: 'blur(5px)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
@@ -2629,73 +3001,77 @@ function App({ currentUser, onLogout }) {
 
         {mainView === 'dashboard' && (
           <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
-              <button
-                onClick={() => setIsStationDrawerOpen(true)}
-                style={{
-                  background: C.panelAlt,
-                  border: `1px solid ${C.border}`,
-                  borderRadius: 9,
-                  color: C.paper,
-                  padding: '8px 16px',
-                  fontSize: 13,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 9,
-                  boxShadow: C.cardShadow
-                }}
-              >
-                <span style={{ fontSize: 16 }}>⚙️</span>
-                <span>İstasyon Sıralama & Tanımları (Sol Çekmece)</span>
-                <span style={{ fontSize: 11, background: `${C.line}22`, color: C.line, padding: '2px 8px', borderRadius: 10, fontWeight: 800 }}>
-                  {displayedStations.length} İstasyon
-                </span>
-              </button>
-              <span style={{ fontSize: 12.5, color: C.dim }}>
-                İstasyonları sürükleyip sıralamak veya yeni istasyon eklemek için sol çekmeceyi açın ⇥
-              </span>
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, padding: 5, background: C.tabStripBg, borderRadius: 12, marginBottom: 16, border: `1px solid ${C.border}` }}>
-              {weekDates.map((d, i) => {
-                const active = i === dayIndex;
-                const hasData = hasDataForDate(d);
-                const isWeekend = i === 5 || i === 6;
-                return (
-                  <button 
-                    key={i} 
-                    onClick={() => setDayIndex(i)} 
-                    style={{ 
-                      flex: 1, 
-                      background: active ? C.tabActiveBg : 'transparent', 
-                      border: active ? `1px solid ${C.border}` : '1px solid transparent', 
-                      borderRadius: 9, 
-                      padding: '11px 6px', 
-                      cursor: 'pointer', 
-                      color: active ? (isWeekend ? C.weekend : C.paper) : (isWeekend ? `${C.weekend}bb` : C.dim), 
-                      position: 'relative',
-                      boxShadow: active ? C.cardShadow : 'none',
-                      transition: 'all 0.15s ease'
+            {!isMobile && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
+                  <button
+                    onClick={() => setIsStationDrawerOpen(true)}
+                    style={{
+                      background: C.panelAlt,
+                      border: `1px solid ${C.border}`,
+                      borderRadius: 9,
+                      color: C.paper,
+                      padding: '8px 16px',
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 9,
+                      boxShadow: C.cardShadow
                     }}
                   >
-                    <div style={{ fontSize: 12.5, fontWeight: active ? 800 : 700 }}>{DAY_NAMES[i]} {isWeekend && '⚡'}</div>
-                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 16, fontWeight: active ? 800 : 600, marginTop: 2 }}>{d.getDate()}</div>
-                    {hasData && <div style={{ position: 'absolute', top: 7, right: 7, width: 7, height: 7, borderRadius: '50%', background: C.good }} />}
+                    <span style={{ fontSize: 16 }}>⚙️</span>
+                    <span>İstasyon Sıralama & Tanımları (Sol Çekmece)</span>
+                    <span style={{ fontSize: 11, background: `${C.line}22`, color: C.line, padding: '2px 8px', borderRadius: 10, fontWeight: 800 }}>
+                      {displayedStations.length} İstasyon
+                    </span>
                   </button>
-                );
-              })}
-            </div>
+                  <span style={{ fontSize: 12.5, color: C.dim }}>
+                    İstasyonları sürükleyip sıralamak veya yeni istasyon eklemek için sol çekmeceyi açın ⇥
+                  </span>
+                </div>
 
-            <div style={{ background: C.panel, border: `1px solid ${isWeekendDay ? (theme === 'light' ? '#C7D2FE' : C.weekend) : C.border}`, borderRadius: 12, padding: 20, marginBottom: 22, boxShadow: C.cardShadow }}>
+                <div style={{ display: 'flex', gap: 8, padding: 5, background: C.tabStripBg, borderRadius: 12, marginBottom: 16, border: `1px solid ${C.border}` }}>
+                  {weekDates.map((d, i) => {
+                    const active = i === dayIndex;
+                    const hasData = hasDataForDate(d);
+                    const isWeekend = i === 5 || i === 6;
+                    return (
+                      <button 
+                        key={i} 
+                        onClick={() => setDayIndex(i)} 
+                        style={{ 
+                          flex: 1, 
+                          background: active ? C.tabActiveBg : 'transparent', 
+                          border: active ? `1px solid ${C.border}` : '1px solid transparent', 
+                          borderRadius: 9, 
+                          padding: '11px 6px', 
+                          cursor: 'pointer', 
+                          color: active ? (isWeekend ? C.weekend : C.paper) : (isWeekend ? `${C.weekend}bb` : C.dim), 
+                          position: 'relative',
+                          boxShadow: active ? C.cardShadow : 'none',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <div style={{ fontSize: 12.5, fontWeight: active ? 800 : 700 }}>{DAY_NAMES[i]} {isWeekend && '⚡'}</div>
+                        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 16, fontWeight: active ? 800 : 600, marginTop: 2 }}>{d.getDate()}</div>
+                        {hasData && <div style={{ position: 'absolute', top: 7, right: 7, width: 7, height: 7, borderRadius: '50%', background: C.good }} />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            <div style={{ background: C.panel, border: `1px solid ${isWeekendDay ? (theme === 'light' ? '#C7D2FE' : C.weekend) : C.border}`, borderRadius: 12, padding: isMobile ? '12px 10px' : 20, marginBottom: isMobile ? 14 : 22, boxShadow: C.cardShadow }}>
               
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, paddingBottom: 14, borderBottom: `1px solid ${C.border}` }}>
-                <div style={{ fontSize: 15, fontWeight: 700, color: isWeekendDay ? C.weekend : C.paper, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 18 }}>{isWeekendDay ? '📅' : '📋'}</span>
-                  <span>{isWeekendDay ? 'HAFTASONU MESAİSİ:' : 'Girişler:'}</span>
-                  <strong>{DAY_NAMES[dayIndex]} günü ({selectedDate.getDate()} {MONTHS[selectedDate.getMonth()]})</strong>
-                  {isWeekendDay && <span style={{ fontSize: 12.5, color: C.dim }}>(06:55–16:55 vardiyası)</span>}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: isMobile ? 12 : 18, paddingBottom: isMobile ? 10 : 14, borderBottom: `1px solid ${C.border}` }}>
+                <div style={{ fontSize: isMobile ? 13.5 : 15, fontWeight: 700, color: isWeekendDay ? C.weekend : C.paper, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: isMobile ? 16 : 18 }}>{isWeekendDay ? '📅' : '📋'}</span>
+                  <span>{isWeekendDay ? 'HAFTASONU:' : 'Girişler:'}</span>
+                  <strong>{DAY_NAMES[dayIndex]} ({selectedDate.getDate()} {MONTHS[selectedDate.getMonth()]})</strong>
+                  {isWeekendDay && !isMobile && <span style={{ fontSize: 12.5, color: C.dim }}>(06:55–16:55 vardiyası)</span>}
                 </div>
                 
                 <button
@@ -2704,23 +3080,26 @@ function App({ currentUser, onLogout }) {
                     background: C.dangerBadgeBg,
                     border: `1px solid ${C.dangerBadgeBorder}`,
                     color: C.bad,
-                    padding: '6px 14px',
+                    padding: isMobile ? '4px 8px' : '6px 14px',
                     borderRadius: 8,
-                    fontSize: 12.5,
+                    fontSize: isMobile ? 11 : 12.5,
                     fontWeight: 700,
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 6
+                    gap: 5
                   }}
                   title="Bu günün tüm istasyon verilerini temizler"
                 >
-                  <span>🗑️</span> Seçili Günü Tamamen Sıfırla
+                  <span>🗑️</span> {isMobile ? 'Günü Sıfırla' : 'Seçili Günü Tamamen Sıfırla'}
                 </button>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 16 }}>
-                {data.stations.filter(s => s.active !== false).map((s, sIdx) => {
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(380px, 1fr))', gap: isMobile ? 12 : 16 }}>
+                {data.stations
+                  .filter(s => s.active !== false)
+                  .filter(s => !isMobile || mobileGroupFilter === 'all' || s.group === mobileGroupFilter)
+                  .map((s, sIdx) => {
                   const entry = data.entries[`${selectedKey}|${s.id}`] || {};
                   const isIdle = !!entry.isIdle;
                   const cDay = carryoverMap[s.id]?.[dayIndex];
@@ -2778,6 +3157,527 @@ function App({ currentUser, onLogout }) {
 
                   const job1ActualNum = parseFloat(entry.actual) || 0;
                   const job2ActualNum = parseFloat(entry.secondJobActual) || 0;
+
+                  if (isMobile) {
+                    const isExpanded = expandedStationId === s.id;
+                    const toggleExpanded = () => setExpandedStationId(isExpanded ? null : s.id);
+                    const wagonDisplay = entry.wagonNo ?? (cDay?.isCarryover && cDay?.job1WagonNo ? cDay.job1WagonNo : '');
+                    const groupColor = getGroupColor(s.group, C);
+
+                    return (
+                      <div
+                        key={s.id}
+                        className={`mobile-touch-card ${isIdle ? 'idle-card' : ''}`}
+                        style={{
+                          background: isIdle ? C.panelAlt : C.panel,
+                          border: `1px solid ${isCurrentlyPaused ? C.copper : (inboundEvents.length > 0 ? C.good : (isWeekendDay ? (theme === 'light' ? '#C7D2FE' : C.weekend) : C.border))}`,
+                          borderLeft: `5px solid ${groupColor}`,
+                          borderRadius: 14,
+                          padding: '14px 14px',
+                          boxShadow: C.cardShadow,
+                          marginBottom: 10,
+                          transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
+                        }}
+                      >
+                        {/* 1. ÜST BAŞLIK: No, İstasyon Adı, Durum & Verim Rozeti */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, gap: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', flex: 1 }}>
+                            <span style={{
+                              fontFamily: "'JetBrains Mono', monospace",
+                              fontSize: 12,
+                              fontWeight: 800,
+                              background: `${groupColor}22`,
+                              color: groupColor,
+                              padding: '2px 7px',
+                              borderRadius: 6,
+                              border: `1px solid ${groupColor}44`
+                            }}>
+                              #{String(sIdx + 1).padStart(2, '0')}
+                            </span>
+                            <span style={{ fontWeight: 800, fontSize: 16.5, color: C.paper, letterSpacing: -0.2 }}>
+                              {s.name}
+                            </span>
+                            {isCurrentlyPaused && (
+                              <span style={{ fontSize: 10.5, padding: '2px 6px', borderRadius: 4, background: C.warningBadgeBg, color: C.copper, border: `1px solid ${C.warningBadgeBorder}`, fontWeight: 800 }}>
+                                ⏸️ BEKLEMEDE
+                              </span>
+                            )}
+                            {inboundEvents.length > 0 && !isCurrentlyPaused && (
+                              <span style={{ fontSize: 10.5, padding: '2px 6px', borderRadius: 4, background: C.successBadgeBg, color: C.good, border: `1px solid ${C.successBadgeBorder}`, fontWeight: 800 }}>
+                                📥 +{inboundEvents.reduce((a, b) => a + b.count, 0)} TAKVİYE
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Sağ Taraf: Boşta Toggle & Verim */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <button
+                              onClick={() => toggleDayIdle(selectedKey, s.id)}
+                              style={{
+                                background: isIdle ? C.warningBadgeBg : C.panelAlt,
+                                color: isIdle ? C.copper : C.dim,
+                                border: `1px solid ${isIdle ? C.warningBadgeBorder : C.border}`,
+                                fontSize: 10.5,
+                                padding: '3px 7px',
+                                borderRadius: 6,
+                                cursor: 'pointer',
+                                fontWeight: 700
+                              }}
+                            >
+                              {isIdle ? '⏸️ Boşta' : 'Çalışıyor'}
+                            </button>
+                            {!isIdle && (
+                              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 15, fontWeight: 800, color, minWidth: 42, textAlign: 'right' }}>
+                                {eff === null ? '—' : `%${Math.round(eff)}`}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {isIdle ? (
+                          <div style={{ padding: '12px 10px', textAlign: 'center', background: C.panelAlt, border: `1px dashed ${C.border}`, borderRadius: 8, fontSize: 12, color: C.dim }}>
+                            <span style={{ color: C.copper, fontWeight: 700 }}>İstasyon Bugün Planlı Olarak Boşta</span>
+                          </div>
+                        ) : (
+                          <>
+                            {/* 2. VAGON NO & TEK DOKUNUŞLA TAMAMLAMA BUTONU */}
+                            <div style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 8,
+                              marginBottom: 10,
+                              background: C.wagonBox,
+                              padding: '7px 10px',
+                              borderRadius: 8,
+                              border: `1px solid ${C.wagonBorder}`
+                            }}>
+                              <span style={{ fontSize: 14 }}>🚆</span>
+                              <input
+                                type="text"
+                                placeholder={cDay?.isCarryover && cDay?.job1WagonNo ? `Dünden: ${cDay.job1WagonNo}` : "Vagon No (örn. V-46)"}
+                                value={wagonDisplay}
+                                onChange={(e) => updateEntry(selectedKey, s.id, 'wagonNo', e.target.value)}
+                                style={{
+                                  flex: 1,
+                                  minWidth: 0,
+                                  background: C.wagonInputBg,
+                                  border: `1px solid ${C.wagonInputBorder}`,
+                                  borderRadius: 6,
+                                  color: C.wagonText,
+                                  fontWeight: 700,
+                                  padding: '6px 8px',
+                                  fontSize: 13,
+                                  fontFamily: "'JetBrains Mono', monospace"
+                                }}
+                              />
+                              {wagonDisplay && (
+                                <button
+                                  onClick={() => setSelectedWagonDetail(wagonDisplay.trim())}
+                                  style={{
+                                    background: C.headerBtnBg,
+                                    border: `1px solid ${C.border}`,
+                                    borderRadius: 6,
+                                    color: C.line,
+                                    padding: '5px 8px',
+                                    fontSize: 11,
+                                    cursor: 'pointer',
+                                    fontWeight: 700,
+                                    whiteSpace: 'nowrap'
+                                  }}
+                                >
+                                  Detay
+                                </button>
+                              )}
+                              {/* Hızlı İş Tamamlama Butonu */}
+                              <button
+                                onClick={() => {
+                                  const nextStatus = isJob1Completed ? 'in_progress' : 'completed';
+                                  updateEntry(selectedKey, s.id, 'job1Status', nextStatus);
+                                  if (nextStatus === 'completed' && !entry.actualEndTime) {
+                                    const hh = String(Math.floor(nowMin / 60)).padStart(2, '0');
+                                    const mm = String(nowMin % 60).padStart(2, '0');
+                                    updateEntry(selectedKey, s.id, 'actualEndTime', `${hh}:${mm}`);
+                                  }
+                                }}
+                                style={{
+                                  background: isJob1Completed ? C.successBadgeBg : C.panelAlt,
+                                  border: `1px solid ${isJob1Completed ? C.successBadgeBorder : C.border}`,
+                                  color: isJob1Completed ? C.good : C.dim,
+                                  padding: '5px 9px',
+                                  borderRadius: 6,
+                                  fontSize: 11.5,
+                                  cursor: 'pointer',
+                                  fontWeight: 800,
+                                  whiteSpace: 'nowrap'
+                                }}
+                                title="İşi tamamlandı olarak işaretle veya devam ettir"
+                              >
+                                {isJob1Completed ? '✓ Bitti' : '⏳ Bitir'}
+                              </button>
+                            </div>
+
+                            {/* 3. ÇİFT İLERLEME ÇUBUĞU (TEORİK & FİİLİ) */}
+                            <div style={{
+                              padding: '10px 10px',
+                              background: C.panelAlt,
+                              borderRadius: 10,
+                              border: `1px solid ${C.border}`,
+                              marginBottom: 10,
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 8
+                            }}>
+                              {/* Teorik İlerleme Satırı */}
+                              <div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3, fontSize: 11.5 }}>
+                                  <span style={{ fontWeight: 700, color: C.paper, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <span>⏱️</span> Teorik İlerleme:
+                                  </span>
+                                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, color: j1LiveProg.color, fontSize: 11.5 }}>
+                                    {j1LiveProg.label}
+                                  </span>
+                                </div>
+                                <div style={{ height: 6, background: C.trackBg, borderRadius: 3, overflow: 'hidden' }}>
+                                  <div
+                                    style={{
+                                      height: '100%',
+                                      width: `${j1LiveProg.percent ?? 0}%`,
+                                      background: j1LiveProg.color,
+                                      borderRadius: 3,
+                                      transition: 'width 0.3s ease'
+                                    }}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Fiili İlerleme Satırı & Hızlı % Girişi */}
+                              <div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 3, fontSize: 11.5 }}>
+                                  <span style={{ fontWeight: 700, color: C.good, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <span>🛠️</span> Fiili İlerleme:
+                                  </span>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                    <span style={{ fontSize: 10.5, color: C.dim }}>Fiili %:</span>
+                                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        step="5"
+                                        placeholder="%"
+                                        value={isJob1Completed ? 100 : (entry.actualProgress ?? '')}
+                                        onChange={(e) => updateEntry(selectedKey, s.id, 'actualProgress', e.target.value)}
+                                        className="num-input num-input-sm"
+                                        style={{ width: 56, padding: '3px 16px 3px 6px', fontWeight: 800, color: C.good, textAlign: 'center', fontSize: 12, height: 26 }}
+                                      />
+                                      <span style={{ position: 'absolute', right: 5, fontSize: 10.5, color: C.dim, pointerEvents: 'none' }}>%</span>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div style={{ height: 6, background: C.trackBg, borderRadius: 3, overflow: 'hidden' }}>
+                                  <div
+                                    style={{
+                                      height: '100%',
+                                      width: `${j1ActualProgressVal ?? 0}%`,
+                                      background: C.good,
+                                      borderRadius: 3,
+                                      transition: 'width 0.3s ease'
+                                    }}
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Durum Rozeti */}
+                              {j1ActualProgressVal != null && j1LiveProg.percent != null && (
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 4, borderTop: `1px dashed ${C.border}`, fontSize: 10.5 }}>
+                                  {(() => {
+                                    if (isJob1Completed) {
+                                      return <span style={{ color: C.good, fontWeight: 700 }}>✓ İş Tamamlandı (%100)</span>;
+                                    }
+                                    const diff = j1ActualProgressVal - j1LiveProg.percent;
+                                    if (diff > 5) return <span style={{ color: C.good, fontWeight: 700 }}>🟢 Planın Önünde (+%{Math.round(diff)})</span>;
+                                    if (diff < -5) return <span style={{ color: C.bad, fontWeight: 700 }}>🔴 Plandan Geride (%{Math.round(Math.abs(diff))} geride)</span>;
+                                    return <span style={{ color: C.line, fontWeight: 700 }}>🔵 Planla Uyumlu</span>;
+                                  })()}
+                                  <span style={{ color: C.dim, fontFamily: "'JetBrains Mono', monospace" }}>
+                                    Teorik: %{j1LiveProg.percent} ➔ Fiili: %{j1ActualProgressVal}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* 4. ZAMAN & ÇALIŞMA SAATLERİ SATIRI (4'LÜ GRID) */}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 10 }}>
+                              <div style={{ background: C.panelAlt, padding: '6px 4px', borderRadius: 8, textAlign: 'center', border: `1px solid ${C.border}` }}>
+                                <div style={{ fontSize: 10, color: C.dim, fontWeight: 600, marginBottom: 2 }}>Başlama</div>
+                                <input
+                                  type="time"
+                                  value={entry.startTime || ''}
+                                  placeholder="06:55"
+                                  onChange={(e) => updateEntry(selectedKey, s.id, 'startTime', e.target.value)}
+                                  style={{ width: '100%', textAlign: 'center', background: 'transparent', border: 'none', color: C.paper, fontSize: 11.5, fontWeight: 700, padding: 0 }}
+                                />
+                              </div>
+                              <div style={{ background: C.warningBadgeBg, padding: '6px 4px', borderRadius: 8, textAlign: 'center', border: `1px solid ${C.warningBadgeBorder}` }}>
+                                <div style={{ fontSize: 10, color: C.copper, fontWeight: 700, marginBottom: 2 }}>Teorik</div>
+                                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, fontWeight: 800, color: j1Est?.mode === 'exceeds' || j1Est?.mode === 'carryover' ? C.bad : j1Est?.mode?.includes('weekend') ? C.weekend : j1Est?.mode === 'overtime' ? C.copper : C.good }}>
+                                  {j1Est ? j1Est.label : '—'}
+                                </div>
+                              </div>
+                              <div style={{ background: C.panelAlt, padding: '6px 4px', borderRadius: 8, textAlign: 'center', border: `1px solid ${C.border}` }}>
+                                <div style={{ fontSize: 10, color: C.dim, fontWeight: 600, marginBottom: 2 }}>Gerçek Bitiş</div>
+                                <input
+                                  type="time"
+                                  value={entry.actualEndTime || ''}
+                                  onChange={(e) => updateEntry(selectedKey, s.id, 'actualEndTime', e.target.value)}
+                                  style={{ width: '100%', textAlign: 'center', background: 'transparent', border: 'none', color: C.paper, fontSize: 11.5, fontWeight: 700, padding: 0 }}
+                                />
+                              </div>
+                              <div style={{ background: C.wagonInputBg, padding: '6px 4px', borderRadius: 8, textAlign: 'center', border: `1px solid ${C.border}` }}>
+                                <div style={{ fontSize: 10, color: C.dim, fontWeight: 600, marginBottom: 2 }}>Fiili a-s</div>
+                                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 800, color: C.paper }}>
+                                  {entry.actual ? `${parseFloat(entry.actual).toFixed(1)}` : '—'}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* 5. AKORDEON: DETAYLAR, PERSONEL, 2. İŞ & DURUŞ (AÇILIR/KAPANIR) */}
+                            <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 6 }}>
+                              <button
+                                onClick={toggleExpanded}
+                                style={{
+                                  width: '100%',
+                                  background: isExpanded ? C.panelAlt : 'transparent',
+                                  border: `1px dashed ${isExpanded ? C.line : C.border}`,
+                                  borderRadius: 8,
+                                  padding: '6px 10px',
+                                  fontSize: 11.5,
+                                  fontWeight: 700,
+                                  color: isExpanded ? C.line : C.dim,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span>{isExpanded ? '▲' : '▼'}</span>
+                                  <span>Personel & Ekstra İşlemler {outboundEvents.length > 0 && `(Takviye: ${outboundEvents.length})`}</span>
+                                </span>
+                                <span style={{ fontSize: 11, color: isCurrentlyPaused ? C.bad : C.good, fontWeight: 800 }}>
+                                  Şu an: {currentStaffNow} kişi
+                                </span>
+                              </button>
+
+                              {isExpanded && (
+                                <div className="animate-fade-in" style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                  {/* Personel Sayıları */}
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, background: C.panelAlt, padding: 8, borderRadius: 8, border: `1px solid ${C.border}` }}>
+                                    <div>
+                                      <div style={{ fontSize: 10.5, color: C.dim, textAlign: 'center', fontWeight: 600, marginBottom: 2 }}>Başlangıç Personeli</div>
+                                      <input
+                                        type="number" min="0" step="1"
+                                        className="num-input num-input-sm"
+                                        placeholder="0"
+                                        value={entry.totalStaff || ''}
+                                        onChange={(e) => updateEntry(selectedKey, s.id, 'totalStaff', e.target.value)}
+                                      />
+                                    </div>
+                                    <div>
+                                      <div style={{ fontSize: 10.5, color: C.dim, textAlign: 'center', fontWeight: 600, marginBottom: 2 }}>Devamsız Personel</div>
+                                      <input
+                                        type="number" min="0" step="1"
+                                        className="num-input num-input-sm"
+                                        placeholder="0"
+                                        value={entry.absentStaff || ''}
+                                        onChange={(e) => updateEntry(selectedKey, s.id, 'absentStaff', e.target.value)}
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {/* Takviye ve Duruş Butonu */}
+                                  <button
+                                    type="button"
+                                    onClick={() => setOpenShiftPanelStationId(isShiftPanelOpen ? null : s.id)}
+                                    style={{
+                                      background: outboundEvents.length > 0 ? C.totalBoxBg : C.panelAlt,
+                                      border: `1px solid ${outboundEvents.length > 0 ? C.totalBoxBorder : C.border}`,
+                                      color: outboundEvents.length > 0 ? C.line : C.dim,
+                                      borderRadius: 8,
+                                      padding: '8px 10px',
+                                      fontSize: 11.5,
+                                      fontWeight: 700,
+                                      cursor: 'pointer',
+                                      textAlign: 'center'
+                                    }}
+                                  >
+                                    👥 {outboundEvents.length > 0 ? `Personel Aktarıldı (${outboundEvents.length})` : '+ Personel Kaydır / Duruş Ekle'}
+                                  </button>
+
+                                  {/* Personel Kaydırma Paneli (Açıksa) */}
+                                  {isShiftPanelOpen && (
+                                    <div style={{ padding: 10, background: C.panel, borderRadius: 8, border: `1px dashed ${C.line}` }}>
+                                      <div style={{ fontSize: 11.5, fontWeight: 800, color: C.line, marginBottom: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <span>👥 Personel Kaydırma / Duruş</span>
+                                        <button onClick={() => setOpenShiftPanelStationId(null)} style={{ background: 'transparent', border: 'none', color: C.dim, cursor: 'pointer', fontSize: 13 }}>✕</button>
+                                      </div>
+                                      {(entry.staffShifts || []).map((sh, shIdx) => (
+                                        <div key={sh.id || shIdx} style={{ display: 'flex', flexDirection: 'column', gap: 4, background: C.panelAlt, padding: 6, borderRadius: 6, border: `1px solid ${C.border}`, marginBottom: 6 }}>
+                                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                            <input
+                                              type="time"
+                                              value={sh.time || ''}
+                                              onChange={(e) => updateStaffShiftItem(selectedKey, s.id, shIdx, 'time', e.target.value)}
+                                              style={{ width: 68, fontSize: 11 }}
+                                              className="num-input num-input-sm"
+                                            />
+                                            <input
+                                              type="number" min="0" step="1"
+                                              value={sh.transferredCount ?? 4}
+                                              onChange={(e) => updateStaffShiftItem(selectedKey, s.id, shIdx, 'transferredCount', e.target.value === '' ? '' : parseFloat(e.target.value))}
+                                              style={{ width: 44, fontSize: 11, color: C.bad, fontWeight: 800, textAlign: 'center' }}
+                                              className="num-input num-input-sm"
+                                            />
+                                            <span style={{ fontSize: 11, color: C.dim }}>kişi</span>
+                                            <button
+                                              type="button"
+                                              onClick={() => removeStaffShiftItem(selectedKey, s.id, shIdx)}
+                                              style={{ background: 'transparent', border: 'none', color: C.bad, cursor: 'pointer', fontSize: 14, marginLeft: 'auto' }}
+                                            >✕</button>
+                                          </div>
+                                          <select
+                                            value={sh.targetStationId || ''}
+                                            onChange={(e) => updateStaffShiftItem(selectedKey, s.id, shIdx, 'targetStationId', e.target.value)}
+                                            style={{ width: '100%', background: C.wagonInputBg, border: `1px solid ${C.border}`, borderRadius: 5, color: C.paper, fontSize: 11, padding: '3px 6px' }}
+                                          >
+                                            <option value="">— İstasyon Seçin —</option>
+                                            <option value="pause">⏸️ Duruş / Bekleme</option>
+                                            <option value="external">🌐 Dış Saha</option>
+                                            {data.stations.filter(other => other.id !== s.id && other.active !== false).map(other => (
+                                              <option key={other.id} value={other.id}>➔ {other.name}</option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                      ))}
+                                      <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                                        <button
+                                          type="button"
+                                          onClick={() => addStaffShift(selectedKey, s.id, '11:00', Math.min(4, timeline.baseStaff || 4), '')}
+                                          style={{ flex: 1, padding: '6px 4px', background: C.totalBoxBg, border: `1px solid ${C.totalBoxBorder}`, color: C.line, borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+                                        >
+                                          + Kaydır
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => addStaffShift(selectedKey, s.id, '11:00', timeline.baseStaff || 8, 'pause')}
+                                          style={{ flex: 1, padding: '6px 4px', background: C.warningBadgeBg, border: `1px solid ${C.warningBadgeBorder}`, color: C.copper, borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+                                        >
+                                          ⏸️ Durdur
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* 2. İŞ (Eğer varsa veya başlatılacaksa) */}
+                                  {!entry.hasSecondJob ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleSecondJob(selectedKey, s.id, entry.actualEndTime, s.standardHours)}
+                                      style={{
+                                        width: '100%',
+                                        background: C.successBadgeBg,
+                                        border: `1px dashed ${C.successBadgeBorder}`,
+                                        color: C.good,
+                                        padding: '8px 10px',
+                                        borderRadius: 8,
+                                        cursor: 'pointer',
+                                        fontWeight: 700,
+                                        fontSize: 12,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: 6
+                                      }}
+                                    >
+                                      <span>➕</span> Gün İçinde 2. Yeni İşi Başlat
+                                    </button>
+                                  ) : (
+                                    <div style={{ background: C.secondJobBg, border: `1px solid ${C.secondJobBorder}`, borderRadius: 8, padding: 10 }}>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, borderBottom: `1px solid ${C.secondJobBorder}`, paddingBottom: 6 }}>
+                                        <span style={{ fontSize: 11.5, color: C.secondJobHeader, fontWeight: 800 }}>⚡ 2. İŞ</span>
+                                        <div style={{ display: 'flex', gap: 5 }}>
+                                          <button
+                                            onClick={() => updateEntry(selectedKey, s.id, 'secondJobStatus', cDay?.job2Status === 'in_progress' ? 'completed' : 'in_progress')}
+                                            style={{ background: cDay?.job2Status === 'in_progress' ? C.warningBadgeBg : C.successBadgeBg, border: `1px solid ${cDay?.job2Status === 'in_progress' ? C.warningBadgeBorder : C.successBadgeBorder}`, color: cDay?.job2Status === 'in_progress' ? C.copper : C.good, fontSize: 10.5, padding: '2px 7px', borderRadius: 4, cursor: 'pointer', fontWeight: 700 }}
+                                          >
+                                            {cDay?.job2Status === 'in_progress' ? '⏳ Devam' : '✓ Bitti'}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleSecondJob(selectedKey, s.id, entry.actualEndTime, s.standardHours)}
+                                            style={{ background: C.dangerBadgeBg, border: `1px solid ${C.dangerBadgeBorder}`, color: C.bad, fontSize: 10.5, padding: '2px 7px', cursor: 'pointer', borderRadius: 4, fontWeight: 700 }}
+                                          >
+                                            ✕ Kaldır
+                                          </button>
+                                        </div>
+                                      </div>
+                                      <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                                        <input
+                                          type="text"
+                                          placeholder="2. Vagon No"
+                                          value={entry.secondJobWagonNo || ''}
+                                          onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobWagonNo', e.target.value)}
+                                          style={{ flex: 1, background: C.wagonInputBg, border: `1px solid ${C.secondJobWagonBorder}`, borderRadius: 5, padding: '4px 6px', fontSize: 11.5, color: C.secondJobWagonText, fontWeight: 700 }}
+                                        />
+                                        <input
+                                          type="number" min="0" step="0.5" placeholder="Std a-s"
+                                          value={entry.secondJobStandard || ''}
+                                          onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobStandard', e.target.value)}
+                                          style={{ width: 68, fontSize: 11 }}
+                                          className="num-input num-input-sm"
+                                        />
+                                      </div>
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 4 }}>
+                                        <input type="time" placeholder="Başla" value={entry.secondJobStartTime || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobStartTime', e.target.value)} style={{ fontSize: 10.5, padding: '2px 3px' }} className="num-input num-input-sm" />
+                                        <div style={{ background: C.warningBadgeBg, borderRadius: 5, padding: '4px 2px', textAlign: 'center', fontSize: 10.5, fontWeight: 800, color: C.copper }}>{j2Est ? j2Est.label : '—'}</div>
+                                        <input type="time" placeholder="Bitiş" value={entry.secondJobActualEndTime || ''} onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobActualEndTime', e.target.value)} style={{ fontSize: 10.5, padding: '2px 3px' }} className="num-input num-input-sm" />
+                                        <div style={{ background: C.wagonInputBg, borderRadius: 5, padding: '4px 2px', textAlign: 'center', fontSize: 11, fontWeight: 800, color: C.secondJobHeader }}>{entry.secondJobActual ? `${parseFloat(entry.secondJobActual).toFixed(1)}` : '—'}</div>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Duruş / Kayıp Nedeni */}
+                                  <div style={{ background: C.warningBadgeBg, padding: 8, borderRadius: 8, border: `1px solid ${C.warningBadgeBorder}` }}>
+                                    <div style={{ fontSize: 11, fontWeight: 800, color: C.copper, marginBottom: 4 }}>⚠️ Duruş / Kayıp Nedeni:</div>
+                                    <select
+                                      value={entry.downtimeReason || ''}
+                                      onChange={(e) => updateEntry(selectedKey, s.id, 'downtimeReason', e.target.value)}
+                                      style={{ width: '100%', background: C.wagonInputBg, border: `1px solid ${C.border}`, borderRadius: 5, color: C.paper, fontSize: 11.5, padding: '5px 6px' }}
+                                    >
+                                      <option value="">— Neden Belirtilmedi —</option>
+                                      {DOWNTIME_REASONS.map((r) => (
+                                        <option key={r.id} value={r.id}>{r.label}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+
+                                  {/* Sıfırlama Butonu */}
+                                  {hasAnyInput(entry) && (
+                                    <button
+                                      onClick={() => resetStationDayData(selectedKey, s.id, s.name)}
+                                      style={{ background: C.panelAlt, border: `1px solid ${C.border}`, color: C.bad, padding: '6px', borderRadius: 6, fontSize: 11.5, cursor: 'pointer', fontWeight: 700 }}
+                                    >
+                                      ↺ Bu İstasyonun Verilerini Sıfırla
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  }
 
                   return (
                     <div
@@ -4127,6 +5027,96 @@ function App({ currentUser, onLogout }) {
         <div style={{ marginTop: 32, fontSize: 12.5, color: C.dim, textAlign: 'center' }}>
           Epsilon Solentek İstasyon Verim Panosu · Firebase Cloud Veritabanı
         </div>
+
+        {/* Mobil Alt Sabit Navigasyon Barı (Dock) */}
+        {isMobile && (
+          <div className="mobile-bottom-dock" style={{
+            background: theme === 'light' ? 'rgba(255, 255, 255, 0.94)' : 'rgba(11, 15, 23, 0.94)',
+            borderColor: C.border
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', padding: '6px 8px 4px' }}>
+              <button
+                onClick={() => setMainView('dashboard')}
+                style={{
+                  flex: 1,
+                  background: 'transparent',
+                  border: 'none',
+                  padding: '6px 4px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 3,
+                  cursor: 'pointer',
+                  color: mainView === 'dashboard' ? C.line : C.dim
+                }}
+                className="mobile-pill-btn"
+              >
+                <span style={{ fontSize: 20 }}>📋</span>
+                <span style={{ fontSize: 11, fontWeight: mainView === 'dashboard' ? 800 : 600 }}>İstasyonlar</span>
+              </button>
+
+              <button
+                onClick={() => setMainView('wagons')}
+                style={{
+                  flex: 1,
+                  background: 'transparent',
+                  border: 'none',
+                  padding: '6px 4px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 3,
+                  cursor: 'pointer',
+                  color: mainView === 'wagons' ? C.line : C.dim
+                }}
+                className="mobile-pill-btn"
+              >
+                <span style={{ fontSize: 20 }}>🚆</span>
+                <span style={{ fontSize: 11, fontWeight: mainView === 'wagons' ? 800 : 600 }}>Vagonlar</span>
+              </button>
+
+              <button
+                onClick={() => setMainView('analytics')}
+                style={{
+                  flex: 1,
+                  background: 'transparent',
+                  border: 'none',
+                  padding: '6px 4px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 3,
+                  cursor: 'pointer',
+                  color: mainView === 'analytics' ? C.line : C.dim
+                }}
+                className="mobile-pill-btn"
+              >
+                <span style={{ fontSize: 20 }}>📊</span>
+                <span style={{ fontSize: 11, fontWeight: mainView === 'analytics' ? 800 : 600 }}>KPI & Özet</span>
+              </button>
+
+              <button
+                onClick={() => setIsStationDrawerOpen(true)}
+                style={{
+                  flex: 1,
+                  background: 'transparent',
+                  border: 'none',
+                  padding: '6px 4px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 3,
+                  cursor: 'pointer',
+                  color: isStationDrawerOpen ? C.line : C.dim
+                }}
+                className="mobile-pill-btn"
+              >
+                <span style={{ fontSize: 20 }}>⚙️</span>
+                <span style={{ fontSize: 11, fontWeight: 600 }}>Yönetim</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
