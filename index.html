@@ -3603,4 +3603,475 @@ function App({ currentUser, onLogout }) {
                           style={{ background: C.totalBoxBg, border: `1px solid ${C.totalBoxBorder}`, color: C.line, padding: '6px 14px', borderRadius: 8, fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, fontSize: 13.5, display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer' }}
                           title="Vagon Süreç Detayını Aç"
                         >
-      
+                          <span>🚆 Teslimattaki Vagon:</span>
+                          <span style={{ color: C.paper, textDecoration: 'underline' }}>#{activeWagon}</span>
+                        </div>
+                      ) : null;
+                    })()}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 22 }}>
+              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: '16px 20px', boxShadow: C.cardShadow }}>
+                <GroupTag group="taslama" />
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, fontWeight: 800, color: C.groupTaslama, marginTop: 8 }}>
+                  {groupTotals.taslama.actual.toFixed(1)} <span style={{ fontSize: 13, color: C.dim }}>a-s</span>
+                </div>
+                <div style={{ fontSize: 12, color: C.dim, marginTop: 3 }}>Taşlama toplam gerçekleşen</div>
+              </div>
+              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: '16px 20px', boxShadow: C.cardShadow }}>
+                <GroupTag group="montaj" />
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, fontWeight: 800, color: C.groupMontaj, marginTop: 8 }}>
+                  {groupTotals.montaj.actual.toFixed(1)} <span style={{ fontSize: 13, color: C.dim }}>a-s</span>
+                </div>
+                <div style={{ fontSize: 12, color: C.dim, marginTop: 3 }}>Montaj toplam gerçekleşen</div>
+              </div>
+              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: '16px 20px', boxShadow: C.cardShadow }}>
+                <GroupTag group="kaynak" />
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, fontWeight: 800, color: C.groupKaynak, marginTop: 8 }}>
+                  {groupTotals.kaynak.actual.toFixed(1)} <span style={{ fontSize: 13, color: C.dim }}>a-s</span>
+                </div>
+                <div style={{ fontSize: 12, color: C.dim, marginTop: 3 }}>Kaynak toplam gerçekleşen</div>
+              </div>
+              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: '16px 20px', boxShadow: C.cardShadow }}>
+                <span style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: C.bad, border: `1px solid ${C.dangerBadgeBorder}`, background: C.dangerBadgeBg, borderRadius: 5, padding: '3px 7px', textTransform: 'uppercase', fontWeight: 700 }}>Devamsızlık</span>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, fontWeight: 800, color: C.bad, marginTop: 8 }}>
+                  {absenteeismTotal.persons} <span style={{ fontSize: 13, color: C.dim }}>kişi-gün</span>
+                </div>
+                <div style={{ fontSize: 12, color: C.dim, marginTop: 3 }}>{absenteeismTotal.hours.toFixed(1)} adam-saat kayıp</div>
+              </div>
+              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 10, padding: '16px 20px', boxShadow: C.cardShadow }}>
+                <span style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: C.copper, border: `1px solid ${C.warningBadgeBorder}`, background: C.warningBadgeBg, borderRadius: 5, padding: '3px 7px', textTransform: 'uppercase', fontWeight: 700 }}>Verim Kaybı</span>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 24, fontWeight: 800, color: C.copper, marginTop: 8 }}>
+                  {lossTotal.toFixed(1)} <span style={{ fontSize: 13, color: C.dim }}>a-s</span>
+                </div>
+                <div style={{ fontSize: 12, color: C.dim, marginTop: 3 }}>Standardı aşan süre</div>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 22 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 10 }}>
+                Ek Mesai Gerekebilecek İstasyonlar
+              </div>
+              {overtimeStations.length === 0 ? (
+                <div style={{ background: C.successBadgeBg, border: `1px solid ${C.successBadgeBorder}`, borderRadius: 10, padding: 14, fontSize: 13.5, color: C.good, fontWeight: 600 }}>
+                  ✓ Bu hafta ek mesai gereken istasyon görünmüyor.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {overtimeStations.map((s) => (
+                    <div key={s.id} style={{ background: C.dangerBadgeBg, border: `1px solid ${C.dangerBadgeBorder}`, borderRadius: 10, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <GroupTag group={s.group} />
+                        <span style={{ fontWeight: 700, fontSize: 14.5, color: C.paper }}>{s.name}</span>
+                      </div>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, color: C.bad, fontWeight: 700 }}>
+                        ≈{s.totalCapacityShortfall.toFixed(1)} a-s kapasite açığı{s.avgPresent > 0 ? ` · ≈${(s.totalCapacityShortfall / s.avgPresent).toFixed(1)} saat/kişi` : ''}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 10 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: C.dim, textTransform: 'uppercase', letterSpacing: 0.6 }}>Haftalık Özet — İstasyon Bazlı</span>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={printReport} style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, color: C.paper, padding: '8px 16px', fontSize: 13, cursor: 'pointer', fontWeight: 700, boxShadow: C.cardShadow }}>Yazdır / PDF</button>
+                <button onClick={exportCSV} style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, color: C.paper, padding: '8px 16px', fontSize: 13, cursor: 'pointer', fontWeight: 700, boxShadow: C.cardShadow }}>CSV İndir</button>
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 12 }}>
+              {stationSummaries.map((s, i) => (
+                <div key={s.id} style={{ background: C.summaryCardBg, border: `1px solid ${C.border}`, borderRadius: 10, padding: '14px 16px', boxShadow: C.cardShadow, opacity: s.active === false ? 0.6 : 1 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: C.dim, fontWeight: 700 }}>{String(i + 1).padStart(2, '0')}</span>
+                      <span style={{ fontWeight: 700, fontSize: 14.5, color: C.paper }}>
+                        {s.name} {s.active === false && <span style={{ fontSize: 12, color: C.bad }}>(Pasif)</span>}
+                      </span>
+                    </div>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 16, fontWeight: 800, color: effColor(s.avg, C) }}>
+                      {s.avg === null ? (s.idleDays > 0 ? 'Boşta' : '—') : `${Math.round(s.avg)}%`}
+                    </span>
+                  </div>
+                  <div style={{ marginBottom: 8 }}><GroupTag group={s.group} /></div>
+                  <DimensionBar eff={s.avg} />
+                  <div style={{ fontSize: 12, color: C.dim, marginTop: 10 }}>
+                    {s.days > 0 ? `${s.totalActual.toFixed(1)} a-s gerçekleşen${s.totalStandardExpected > 0 ? ` / ${s.totalStandardExpected.toFixed(1)} a-s hedef` : ''}` : (s.idleDays > 0 ? `${s.idleDays} gün planlı boşta` : 'Veri yok')}
+                  </div>
+                  {s.wagonsList && s.wagonsList.length > 0 && (
+                    <div style={{ marginTop: 10, paddingTop: 8, borderTop: `1px solid ${C.border}`, display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                      {s.wagonsList.map((w) => {
+                        const last = w.jobs[w.jobs.length - 1];
+                        const isDone = last.status === 'Tamamlandı';
+                        return (
+                          <span 
+                            key={w.name} 
+                            onClick={() => setSelectedWagonDetail(w.name)}
+                            title={`${last.day} - ${last.job}: ${last.status} (Tıkla Detayı Gör)`} 
+                            style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", padding: '3px 8px', borderRadius: 5, background: isDone ? C.successBadgeBg : C.warningBadgeBg, color: isDone ? C.good : C.copper, border: `1px solid ${isDone ? C.successBadgeBorder : C.warningBadgeBorder}`, fontWeight: 700, cursor: 'pointer' }}
+                          >
+                            🚆 #{w.name}: {isDone ? '✓' : '⏳'}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {mainView === 'wagons' && (
+          <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: 22, boxShadow: C.cardShadow }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 18 }}>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: C.paper }}>🚆 Vagon İzleme Matrisi & Canlı İlerleme Takibi</div>
+                <div style={{ fontSize: 13, color: C.dim, marginTop: 2 }}>
+                  Devreden eforlar ve takviyeler dahil güncel saat referanslı tamamlanma durumu (Saat: <strong style={{ color: C.line }}>{minToTime(nowMin)}</strong>)
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => setWagonStatusFilter('all')}
+                  style={{ background: wagonStatusFilter === 'all' ? C.line : C.panelAlt, color: wagonStatusFilter === 'all' ? '#FFFFFF' : C.paper, border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}
+                >
+                  Tümü ({wagonsCatalog.length})
+                </button>
+                <button
+                  onClick={() => setWagonStatusFilter('in_progress')}
+                  style={{ background: wagonStatusFilter === 'in_progress' ? C.copper : C.panelAlt, color: wagonStatusFilter === 'in_progress' ? '#FFFFFF' : C.paper, border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}
+                >
+                  Devam Edenler ({wagonsCatalog.filter(w => w.latestStatus !== 'Tamamlandı').length})
+                </button>
+                <button
+                  onClick={() => setWagonStatusFilter('completed')}
+                  style={{ background: wagonStatusFilter === 'completed' ? C.good : C.panelAlt, color: wagonStatusFilter === 'completed' ? '#FFFFFF' : C.paper, border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}
+                >
+                  Tamamlananlar ({wagonsCatalog.filter(w => w.latestStatus === 'Tamamlandı').length})
+                </button>
+              </div>
+            </div>
+
+            {filteredWagons.length === 0 ? (
+              <div style={{ padding: '42px 0', textAlign: 'center', color: C.dim, fontSize: 14 }}>
+                Arama kriterine uygun vagon bulunamadı veya henüz vagon numarası girilmedi.
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ borderBottom: `2px solid ${C.border}`, textAlign: 'left' }}>
+                      <th style={{ padding: '12px 14px', color: C.dim }}>Vagon No</th>
+                      <th style={{ padding: '12px 14px', color: C.dim }}>Başlangıç</th>
+                      <th style={{ padding: '12px 14px', color: C.dim }}>İstasyon Süreci & Adımlar</th>
+                      <th style={{ padding: '12px 14px', color: C.dim, minWidth: 180 }}>Canlı İş İlerlemesi</th>
+                      <th style={{ padding: '12px 14px', color: C.dim, textAlign: 'right' }}>Toplam a-s</th>
+                      <th style={{ padding: '12px 14px', color: C.dim, textAlign: 'center' }}>Verim</th>
+                      <th style={{ padding: '12px 14px', color: C.dim, textAlign: 'center' }}>Son Durum</th>
+                      <th style={{ padding: '12px 14px', color: C.dim, textAlign: 'right' }}>İşlem</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredWagons.map((w) => {
+                      const prog = w.liveProg || { percent: null, label: '—', color: C.dim };
+                      return (
+                        <tr key={w.wagonNo} style={{ borderBottom: `1px solid ${C.border}`, transition: 'background 0.15s' }}>
+                          <td style={{ padding: '14px', fontWeight: 800, color: C.line, fontFamily: "'JetBrains Mono', monospace", fontSize: 14.5 }}>
+                            🚆 #{w.wagonNo}
+                          </td>
+                          <td style={{ padding: '14px', color: C.paper, fontWeight: 600 }}>
+                            {w.firstDay}
+                          </td>
+                          <td style={{ padding: '14px' }}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                              {w.steps.map((st, idx) => (
+                                <span key={idx} style={{ fontSize: 11.5, padding: '3px 8px', borderRadius: 5, background: st.isDone ? C.successBadgeBg : (st.isCurrentlyPaused ? C.warningBadgeBg : `${C.line}18`), color: st.isDone ? C.good : (st.isCurrentlyPaused ? C.copper : C.line), border: `1px solid ${st.isDone ? C.successBadgeBorder : (st.isCurrentlyPaused ? C.warningBadgeBorder : `${C.line}44`)}`, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                  <span>{st.stationName}</span>
+                                  {st.isCarryContinuation && <span title="Dünden Devir Tamamlama">↷</span>}
+                                  {st.isCurrentlyPaused && <span title="İstasyon Beklemede">⏸️</span>}
+                                  {st.inboundReinforcements && st.inboundReinforcements.length > 0 && <span title="Takviye Alındı">📥</span>}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+
+                          <td style={{ padding: '14px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, fontFamily: "'JetBrains Mono', monospace", fontWeight: 800 }}>
+                                <span style={{ color: prog.color }}>{prog.label}</span>
+                                {w.latestActualProgress != null && (
+                                  <span style={{ color: C.good, background: C.successBadgeBg, border: `1px solid ${C.successBadgeBorder}`, padding: '1px 6px', borderRadius: 4 }}>
+                                    Fiili: %{w.latestActualProgress}
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ height: 8, background: C.trackBg, borderRadius: 4, overflow: 'hidden', position: 'relative' }}>
+                                {prog.percent != null && (
+                                  <div style={{ position: 'absolute', height: '100%', width: `${prog.percent}%`, background: prog.color, opacity: 0.45, borderRadius: 4 }} title={`Teorik: %${prog.percent}`} />
+                                )}
+                                {w.latestActualProgress != null && (
+                                  <div style={{ position: 'absolute', height: '100%', width: `${Math.min(Math.max(w.latestActualProgress, 0), 100)}%`, background: C.good, borderRadius: 4 }} title={`Fiili: %${w.latestActualProgress}`} />
+                                )}
+                              </div>
+                              {w.latestActualProgress != null && prog.percent != null && (
+                                <div style={{ fontSize: 10.5, fontWeight: 700 }}>
+                                  {w.latestActualProgress > prog.percent + 5 ? (
+                                    <span style={{ color: C.good }}>🟢 Planın Önünde (+%{Math.round(w.latestActualProgress - prog.percent)})</span>
+                                  ) : w.latestActualProgress < prog.percent - 5 ? (
+                                    <span style={{ color: C.bad }}>🔴 Plandan Geride (%{Math.round(prog.percent - w.latestActualProgress)} geride)</span>
+                                  ) : (
+                                    <span style={{ color: C.line }}>🔵 Planla Uyumlu</span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+
+                          <td style={{ padding: '14px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, color: C.paper, fontSize: 14 }}>
+                            {w.totalActual.toFixed(1)} a-s
+                          </td>
+                          <td style={{ padding: '14px', textAlign: 'center', fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, color: effColor(w.overallEff, C), fontSize: 14 }}>
+                            {w.overallEff != null ? `${Math.round(w.overallEff)}%` : '—'}
+                          </td>
+                          <td style={{ padding: '14px', textAlign: 'center' }}>
+                            <span style={{ fontSize: 12, padding: '4px 10px', borderRadius: 6, background: w.latestStatus === 'Tamamlandı' ? C.successBadgeBg : (w.isPaused ? C.warningBadgeBg : C.panelAlt), color: w.latestStatus === 'Tamamlandı' ? C.good : (w.isPaused ? C.copper : C.paper), border: `1px solid ${w.latestStatus === 'Tamamlandı' ? C.successBadgeBorder : (w.isPaused ? C.warningBadgeBorder : C.border)}`, fontWeight: 700 }}>
+                              {w.latestStatus}
+                            </span>
+                          </td>
+                          <td style={{ padding: '14px', textAlign: 'right' }}>
+                            <button
+                              onClick={() => setSelectedWagonDetail(w.wagonNo)}
+                              style={{ background: C.headerBtnBg, border: `1px solid ${C.border}`, borderRadius: 6, color: C.line, padding: '5px 12px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}
+                            >
+                              Detay ➔
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {mainView === 'analytics' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: C.cardShadow }}>
+                <GroupTag group="taslama" />
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 800, color: C.groupTaslama, marginTop: 8 }}>
+                  {groupTotals.taslama.actual.toFixed(1)} <span style={{ fontSize: 13, color: C.dim }}>a-s</span>
+                </div>
+                <div style={{ fontSize: 12, color: C.dim, marginTop: 3 }}>Taşlama fiili hacmi</div>
+              </div>
+
+              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: C.cardShadow }}>
+                <GroupTag group="montaj" />
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 800, color: C.groupMontaj, marginTop: 8 }}>
+                  {groupTotals.montaj.actual.toFixed(1)} <span style={{ fontSize: 13, color: C.dim }}>a-s</span>
+                </div>
+                <div style={{ fontSize: 12, color: C.dim, marginTop: 3 }}>Montaj fiili hacmi</div>
+              </div>
+
+              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: C.cardShadow }}>
+                <GroupTag group="kaynak" />
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 800, color: C.groupKaynak, marginTop: 8 }}>
+                  {groupTotals.kaynak.actual.toFixed(1)} <span style={{ fontSize: 13, color: C.dim }}>a-s</span>
+                </div>
+                <div style={{ fontSize: 12, color: C.dim, marginTop: 3 }}>Kaynak fiili hacmi</div>
+              </div>
+
+              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: C.cardShadow }}>
+                <div style={{ fontSize: 12, color: C.dim, textTransform: 'uppercase', fontWeight: 700 }}>Ortalama Fabrika Verimi</div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 800, color: effColor(weekAvg, C), marginTop: 8 }}>
+                  {weekAvg === null ? '—' : Math.round(weekAvg)}%
+                </div>
+                <div style={{ fontSize: 12, color: C.dim, marginTop: 3 }}>Standart hedef karşılaştırması</div>
+              </div>
+
+              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: 18, boxShadow: C.cardShadow }}>
+                <div style={{ fontSize: 12, color: C.dim, textTransform: 'uppercase', fontWeight: 700 }}>Duruş & Verim Kaybı</div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 26, fontWeight: 800, color: C.copper, marginTop: 8 }}>
+                  {lossTotal.toFixed(1)} <span style={{ fontSize: 13, color: C.dim }}>a-s</span>
+                </div>
+                <div style={{ fontSize: 12, color: C.dim, marginTop: 3 }}>Standardı aşan kayıplar</div>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 18 }}>
+              <TrendChart weekDates={weekDates} data={data} carryoverMap={carryoverMap} stations={data.stations} />
+              <ParetoChart downtimeSummary={downtimeSummary} />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 18 }}>
+              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20, boxShadow: C.cardShadow }}>
+                <div style={{ fontSize: 14.5, fontWeight: 800, color: C.paper, marginBottom: 16 }}>⚖️ Taşlama vs. Montaj vs. Kaynak Bölüm Dağılımı</div>
+                
+                {(() => {
+                  const totActual = groupTotals.taslama.actual + groupTotals.montaj.actual + groupTotals.kaynak.actual;
+                  const safeTot = Math.max(totActual, 1);
+                  const pTaslama = Math.round((groupTotals.taslama.actual / safeTot) * 100);
+                  const pMontaj = Math.round((groupTotals.montaj.actual / safeTot) * 100);
+                  const pKaynak = Math.round((groupTotals.kaynak.actual / safeTot) * 100);
+
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 5 }}>
+                          <span style={{ fontWeight: 700, color: C.groupTaslama, display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <span>🧽</span> Taşlama Bölümü
+                          </span>
+                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, color: C.groupTaslama }}>
+                            {groupTotals.taslama.actual.toFixed(1)} a-s (%{pTaslama})
+                          </span>
+                        </div>
+                        <div style={{ height: 11, background: C.trackBg, borderRadius: 6, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${Math.min((groupTotals.taslama.actual / safeTot) * 100, 100)}%`, background: C.groupTaslama, borderRadius: 6 }} />
+                        </div>
+                      </div>
+
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 5 }}>
+                          <span style={{ fontWeight: 700, color: C.groupMontaj, display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <span>🔩</span> Montaj Bölümü
+                          </span>
+                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, color: C.groupMontaj }}>
+                            {groupTotals.montaj.actual.toFixed(1)} a-s (%{pMontaj})
+                          </span>
+                        </div>
+                        <div style={{ height: 11, background: C.trackBg, borderRadius: 6, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${Math.min((groupTotals.montaj.actual / safeTot) * 100, 100)}%`, background: C.groupMontaj, borderRadius: 6 }} />
+                        </div>
+                      </div>
+
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 5 }}>
+                          <span style={{ fontWeight: 700, color: C.groupKaynak, display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <span>⚡</span> Kaynak Bölümü
+                          </span>
+                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, color: C.groupKaynak }}>
+                            {groupTotals.kaynak.actual.toFixed(1)} a-s (%{pKaynak})
+                          </span>
+                        </div>
+                        <div style={{ height: 11, background: C.trackBg, borderRadius: 6, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${Math.min((groupTotals.kaynak.actual / safeTot) * 100, 100)}%`, background: C.groupKaynak, borderRadius: 6 }} />
+                        </div>
+                      </div>
+
+                      <div style={{ marginTop: 8, paddingTop: 12, borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', fontSize: 12.5, color: C.dim }}>
+                        <span>Toplam Fabrika İş Hacmi:</span>
+                        <strong style={{ color: C.paper, fontFamily: "'JetBrains Mono', monospace" }}>{totActual.toFixed(1)} a-s</strong>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20, boxShadow: C.cardShadow }}>
+                <div style={{ fontSize: 14.5, fontWeight: 800, color: C.paper, marginBottom: 16 }}>🏆 Haftanın En Yüksek Verimli İstasyonları</div>
+                
+                {topStations.length === 0 ? (
+                  <div style={{ padding: '24px 0', textAlign: 'center', color: C.dim, fontSize: 13 }}>Bu hafta için henüz verim verisi bulunmuyor.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {topStations.map((s, idx) => {
+                      const medal = idx === 0 ? '🥇' : (idx === 1 ? '🥈' : '🥉');
+                      return (
+                        <div key={s.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: C.panelAlt, border: `1px solid ${C.border}`, borderRadius: 8 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <span style={{ fontSize: 22 }}>{medal}</span>
+                            <div>
+                              <div style={{ fontWeight: 700, fontSize: 14, color: C.paper }}>{s.name}</div>
+                              <GroupTag group={s.group} />
+                            </div>
+                          </div>
+                          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 18, fontWeight: 800, color: effColor(s.avg, C) }}>
+                            {Math.round(s.avg)}%
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div style={{ marginTop: 32, fontSize: 12.5, color: C.dim, textAlign: 'center' }}>
+          Epsilon Solentek İstasyon Verim Panosu · Firebase Cloud Veritabanı
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Root() {
+  const [authState, setAuthState] = useState('loading');
+  const [currentUser, setCurrentUser] = useState(null);
+  const [themeMode, setThemeMode] = useState(() => {
+    return localStorage.getItem('est_app_theme') || 'light';
+  });
+
+  const toggleTheme = () => {
+    setThemeMode((prev) => {
+      const next = prev === 'light' ? 'dark' : 'light';
+      localStorage.setItem('est_app_theme', next);
+      return next;
+    });
+  };
+
+  const C = THEMES[themeMode] || THEMES.light;
+
+  useEffect(() => {
+    document.body.setAttribute('data-theme', themeMode);
+    document.body.style.backgroundColor = C.page;
+    document.body.style.color = C.paper;
+  }, [themeMode, C.page, C.paper]);
+
+  useEffect(() => {
+    const unsub = auth.onAuthStateChanged((user) => {
+      setCurrentUser(user);
+      setAuthState(user ? 'signed-in' : 'signed-out');
+    });
+    return unsub;
+  }, []);
+
+  const contextValue = useMemo(() => ({
+    theme: themeMode,
+    toggleTheme,
+    C
+  }), [themeMode, C]);
+
+  if (authState === 'loading') {
+    return (
+      <div style={{ minHeight: '100vh', background: C.page, display: 'flex', alignItems: 'center', justifyContent: 'center', color: C.dim, fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
+        Yükleniyor…
+      </div>
+    );
+  }
+
+  return (
+    <ThemeContext.Provider value={contextValue}>
+      {authState === 'signed-out' ? (
+        <LoginScreen />
+      ) : (
+        <App currentUser={currentUser} onLogout={() => auth.signOut()} />
+      )}
+    </ThemeContext.Provider>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<Root />);
+</script>
+</body>
+</html>
