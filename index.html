@@ -769,33 +769,38 @@ function WagonDetailModal({ wagon, nowMin, onClose }) {
                   </div>
                 </div>
 
-                <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12.5, marginBottom: 6 }}>
-                    <span style={{ fontWeight: 700, color: C.paper, display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span>⏱️ İş İlerlemesi:</span>
-                      <strong style={{ color: liveProg.color }}>Teorik: {liveProg.label}</strong>
-                      {step.actualProgress != null && (
-                        <span style={{ color: C.good, background: C.successBadgeBg, border: `1px solid ${C.successBadgeBorder}`, padding: '1px 7px', borderRadius: 4, fontSize: 12, fontWeight: 800, marginLeft: 6 }}>
-                          Fiili: %{step.actualProgress}
-                        </span>
-                      )}
-                    </span>
-                    <span style={{ fontSize: 12, color: C.dim, fontFamily: "'JetBrains Mono', monospace" }}>
-                      Başlama: <strong>{minToTime(step.startMin)}</strong> → Teorik Bitiş: <strong>{minToTime(step.finishMin)}</strong>
-                    </span>
+                <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {/* Teorik İlerleme */}
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, marginBottom: 4 }}>
+                      <span style={{ fontWeight: 700, color: C.paper, display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <span>⏱️</span> Teorik İlerleme: <strong style={{ color: liveProg.color, marginLeft: 4 }}>{liveProg.label}</strong>
+                      </span>
+                      <span style={{ fontSize: 11.5, color: C.dim, fontFamily: "'JetBrains Mono', monospace" }}>
+                        Başlama: <strong>{minToTime(step.startMin)}</strong> → Bitiş: <strong>{minToTime(step.finishMin)}</strong>
+                      </span>
+                    </div>
+                    <div style={{ height: 7, background: C.trackBg, borderRadius: 4, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${liveProg.percent ?? 0}%`, background: liveProg.color, borderRadius: 4, transition: 'width 0.3s ease' }} />
+                    </div>
                   </div>
 
-                  <div style={{ height: 9, background: C.trackBg, borderRadius: 5, overflow: 'hidden', position: 'relative' }}>
-                    {liveProg.percent != null && (
-                      <div style={{ position: 'absolute', height: '100%', width: `${liveProg.percent}%`, background: liveProg.color, opacity: 0.45, borderRadius: 5 }} title={`Teorik: %${liveProg.percent}`} />
-                    )}
-                    {step.actualProgress != null && (
-                      <div style={{ position: 'absolute', height: '100%', width: `${Math.min(Math.max(step.actualProgress, 0), 100)}%`, background: C.good, borderRadius: 5 }} title={`Fiili: %${step.actualProgress}`} />
-                    )}
-                  </div>
+                  {/* Fiili İlerleme (varsa) */}
+                  {step.actualProgress != null && (
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, marginBottom: 4 }}>
+                        <span style={{ fontWeight: 700, color: C.good, display: 'flex', alignItems: 'center', gap: 5 }}>
+                          <span>🛠️</span> Fiili İlerleme (Gerçekleşen): <strong style={{ color: C.good, marginLeft: 4 }}>%{step.actualProgress}</strong>
+                        </span>
+                      </div>
+                      <div style={{ height: 7, background: C.trackBg, borderRadius: 4, overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${Math.min(Math.max(step.actualProgress, 0), 100)}%`, background: C.good, borderRadius: 4, transition: 'width 0.3s ease' }} />
+                      </div>
+                    </div>
+                  )}
 
                   {step.actualProgress != null && liveProg.percent != null && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 5, fontSize: 11 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2, paddingTop: 6, borderTop: `1px dashed ${C.border}`, fontSize: 11 }}>
                       {(() => {
                         const diff = step.actualProgress - liveProg.percent;
                         if (diff > 5) {
@@ -806,7 +811,7 @@ function WagonDetailModal({ wagon, nowMin, onClose }) {
                           return <span style={{ color: C.line, fontWeight: 700 }}>🔵 Planla Uyumlu</span>;
                         }
                       })()}
-                      <span style={{ color: C.dim }}>Mavi: Teorik (%{liveProg.percent}) | Yeşil: Fiili (%{step.actualProgress})</span>
+                      <span style={{ color: C.dim, fontFamily: "'JetBrains Mono', monospace" }}>Teorik: %{liveProg.percent} ➔ Fiili: %{step.actualProgress}</span>
                     </div>
                   )}
                 </div>
@@ -3086,47 +3091,75 @@ function App({ currentUser, onLogout }) {
                               </div>
                             </div>
 
-                            {/* 1. İş İlerleme Göstergesi & Fiili Girişi */}
-                            <div style={{ marginTop: 8, padding: '8px 10px', background: C.panel, borderRadius: 6, border: `1px solid ${C.border}` }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  <span style={{ fontSize: 11.5, fontWeight: 700, color: C.paper }}>⏱️ 1. İş İlerlemesi:</span>
-                                  <span style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: j1LiveProg.color }}>
-                                    Teorik: {j1LiveProg.label}
+                            {/* 1. İş İlerleme Göstergesi (Teorik ve Fiili Ayrı Çubuklar) */}
+                            <div style={{ marginTop: 9, padding: '10px 12px', background: C.panel, borderRadius: 8, border: `1px solid ${C.border}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                              {/* 1. Satır: Teorik İlerleme */}
+                              <div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, fontSize: 11.5 }}>
+                                  <span style={{ fontWeight: 700, color: C.paper, display: 'flex', alignItems: 'center', gap: 5 }}>
+                                    <span>⏱️</span> Teorik İlerleme:
+                                  </span>
+                                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, color: j1LiveProg.color, fontSize: 12 }}>
+                                    {j1LiveProg.label}
                                   </span>
                                 </div>
-                                
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                                  <span style={{ fontSize: 11, color: C.dim, fontWeight: 600 }}>Fiili İlerleme:</span>
-                                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      max="100"
-                                      step="5"
-                                      placeholder="%"
-                                      value={entry.actualProgress ?? ''}
-                                      onChange={(e) => updateEntry(selectedKey, s.id, 'actualProgress', e.target.value)}
-                                      className="num-input num-input-sm"
-                                      style={{ width: 62, padding: '3px 6px', fontWeight: 800, color: C.good, textAlign: 'center' }}
-                                      title="Sahada gözlemlenen gerçek fiziki ilerleme yüzdesi (0-100)"
-                                    />
-                                    <span style={{ position: 'absolute', right: 6, fontSize: 11, color: C.dim, pointerEvents: 'none' }}>%</span>
-                                  </div>
+                                <div style={{ height: 7, background: C.trackBg, borderRadius: 4, overflow: 'hidden' }}>
+                                  <div
+                                    style={{
+                                      height: '100%',
+                                      width: `${j1LiveProg.percent ?? 0}%`,
+                                      background: j1LiveProg.color,
+                                      borderRadius: 4,
+                                      transition: 'width 0.3s ease'
+                                    }}
+                                    title={`Teorik İlerleme: %${j1LiveProg.percent ?? 0}`}
+                                  />
                                 </div>
                               </div>
 
-                              <div style={{ height: 7, background: C.trackBg, borderRadius: 4, overflow: 'hidden', position: 'relative' }}>
-                                {j1LiveProg.percent != null && (
-                                  <div style={{ position: 'absolute', height: '100%', width: `${j1LiveProg.percent}%`, background: j1LiveProg.color, opacity: 0.4, borderRadius: 4 }} title={`Teorik: %${j1LiveProg.percent}`} />
-                                )}
-                                {entry.actualProgress != null && entry.actualProgress !== '' && (
-                                  <div style={{ position: 'absolute', height: '100%', width: `${Math.min(Math.max(parseFloat(entry.actualProgress) || 0, 0), 100)}%`, background: C.good, borderRadius: 4 }} title={`Fiili: %${entry.actualProgress}`} />
-                                )}
+                              {/* 2. Satır: Fiili İlerleme */}
+                              <div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, fontSize: 11.5 }}>
+                                  <span style={{ fontWeight: 700, color: C.good, display: 'flex', alignItems: 'center', gap: 5 }}>
+                                    <span>🛠️</span> Fiili İlerleme:
+                                  </span>
+                                  
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                    <span style={{ fontSize: 11, color: C.dim, fontWeight: 600 }}>Giriş:</span>
+                                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        step="5"
+                                        placeholder="%"
+                                        value={entry.actualProgress ?? ''}
+                                        onChange={(e) => updateEntry(selectedKey, s.id, 'actualProgress', e.target.value)}
+                                        className="num-input num-input-sm"
+                                        style={{ width: 62, padding: '3px 6px', fontWeight: 800, color: C.good, textAlign: 'center', fontSize: 12 }}
+                                        title="Sahada gözlemlenen gerçek fiziki ilerleme yüzdesi (0-100)"
+                                      />
+                                      <span style={{ position: 'absolute', right: 6, fontSize: 11, color: C.dim, pointerEvents: 'none' }}>%</span>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div style={{ height: 7, background: C.trackBg, borderRadius: 4, overflow: 'hidden' }}>
+                                  <div
+                                    style={{
+                                      height: '100%',
+                                      width: `${Math.min(Math.max(parseFloat(entry.actualProgress) || 0, 0), 100)}%`,
+                                      background: C.good,
+                                      borderRadius: 4,
+                                      transition: 'width 0.3s ease'
+                                    }}
+                                    title={`Fiili İlerleme: %${entry.actualProgress ?? 0}`}
+                                  />
+                                </div>
                               </div>
 
+                              {/* Kıyaslama Özeti */}
                               {entry.actualProgress != null && entry.actualProgress !== '' && j1LiveProg.percent != null && (
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, fontSize: 10.5 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2, paddingTop: 6, borderTop: `1px dashed ${C.border}`, fontSize: 11 }}>
                                   {(() => {
                                     const diff = (parseFloat(entry.actualProgress) || 0) - j1LiveProg.percent;
                                     if (diff > 5) {
@@ -3137,7 +3170,9 @@ function App({ currentUser, onLogout }) {
                                       return <span style={{ color: C.line, fontWeight: 700 }}>🔵 Planla Uyumlu</span>;
                                     }
                                   })()}
-                                  <span style={{ color: C.dim, fontSize: 10 }}>Mavi: Teorik (%{j1LiveProg.percent}) | Yeşil: Fiili (%{entry.actualProgress})</span>
+                                  <span style={{ color: C.dim, fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>
+                                    Teorik: %{j1LiveProg.percent} ➔ Fiili: %{entry.actualProgress}
+                                  </span>
                                 </div>
                               )}
                             </div>
@@ -3299,47 +3334,75 @@ function App({ currentUser, onLogout }) {
                                 </div>
                               </div>
 
-                              {/* 2. İş İlerleme Göstergesi & Fiili Girişi */}
-                              <div style={{ marginTop: 8, padding: '8px 10px', background: C.panel, borderRadius: 6, border: `1px solid ${C.secondJobBorder}` }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <span style={{ fontSize: 11.5, fontWeight: 700, color: C.secondJobHeader }}>⏱️ 2. İş İlerlemesi:</span>
-                                    <span style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: j2LiveProg?.color || C.dim }}>
-                                      Teorik: {j2LiveProg ? j2LiveProg.label : '—'}
+                              {/* 2. İş İlerleme Göstergesi (Teorik ve Fiili Ayrı Çubuklar) */}
+                              <div style={{ marginTop: 9, padding: '10px 12px', background: C.panel, borderRadius: 8, border: `1px solid ${C.secondJobBorder}`, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                {/* 1. Satır: Teorik İlerleme */}
+                                <div>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, fontSize: 11.5 }}>
+                                    <span style={{ fontWeight: 700, color: C.secondJobHeader, display: 'flex', alignItems: 'center', gap: 5 }}>
+                                      <span>⏱️</span> 2. İş Teorik:
+                                    </span>
+                                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 800, color: j2LiveProg?.color || C.dim, fontSize: 12 }}>
+                                      {j2LiveProg ? j2LiveProg.label : '—'}
                                     </span>
                                   </div>
-                                  
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                                    <span style={{ fontSize: 11, color: C.dim, fontWeight: 600 }}>Fiili İlerleme:</span>
-                                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        max="100"
-                                        step="5"
-                                        placeholder="%"
-                                        value={entry.secondJobActualProgress ?? ''}
-                                        onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobActualProgress', e.target.value)}
-                                        className="num-input num-input-sm"
-                                        style={{ width: 62, padding: '3px 6px', fontWeight: 800, color: C.secondJobHeader, textAlign: 'center' }}
-                                        title="2. iş için sahada gözlemlenen gerçek fiziki ilerleme yüzdesi (0-100)"
-                                      />
-                                      <span style={{ position: 'absolute', right: 6, fontSize: 11, color: C.dim, pointerEvents: 'none' }}>%</span>
-                                    </div>
+                                  <div style={{ height: 7, background: C.trackBg, borderRadius: 4, overflow: 'hidden' }}>
+                                    <div
+                                      style={{
+                                        height: '100%',
+                                        width: `${j2LiveProg?.percent ?? 0}%`,
+                                        background: j2LiveProg?.color || C.dim,
+                                        borderRadius: 4,
+                                        transition: 'width 0.3s ease'
+                                      }}
+                                      title={`2. İş Teorik: %${j2LiveProg?.percent ?? 0}`}
+                                    />
                                   </div>
                                 </div>
 
-                                <div style={{ height: 7, background: C.trackBg, borderRadius: 4, overflow: 'hidden', position: 'relative' }}>
-                                  {j2LiveProg?.percent != null && (
-                                    <div style={{ position: 'absolute', height: '100%', width: `${j2LiveProg.percent}%`, background: j2LiveProg.color, opacity: 0.4, borderRadius: 4 }} title={`Teorik: %${j2LiveProg.percent}`} />
-                                  )}
-                                  {entry.secondJobActualProgress != null && entry.secondJobActualProgress !== '' && (
-                                    <div style={{ position: 'absolute', height: '100%', width: `${Math.min(Math.max(parseFloat(entry.secondJobActualProgress) || 0, 0), 100)}%`, background: C.good, borderRadius: 4 }} title={`Fiili: %${entry.secondJobActualProgress}`} />
-                                  )}
+                                {/* 2. Satır: Fiili İlerleme */}
+                                <div>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, fontSize: 11.5 }}>
+                                    <span style={{ fontWeight: 700, color: C.good, display: 'flex', alignItems: 'center', gap: 5 }}>
+                                      <span>🛠️</span> 2. İş Fiili:
+                                    </span>
+                                    
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                      <span style={{ fontSize: 11, color: C.dim, fontWeight: 600 }}>Giriş:</span>
+                                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max="100"
+                                          step="5"
+                                          placeholder="%"
+                                          value={entry.secondJobActualProgress ?? ''}
+                                          onChange={(e) => updateEntry(selectedKey, s.id, 'secondJobActualProgress', e.target.value)}
+                                          className="num-input num-input-sm"
+                                          style={{ width: 62, padding: '3px 6px', fontWeight: 800, color: C.secondJobHeader, textAlign: 'center', fontSize: 12 }}
+                                          title="2. iş için sahada gözlemlenen gerçek fiziki ilerleme yüzdesi (0-100)"
+                                        />
+                                        <span style={{ position: 'absolute', right: 6, fontSize: 11, color: C.dim, pointerEvents: 'none' }}>%</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div style={{ height: 7, background: C.trackBg, borderRadius: 4, overflow: 'hidden' }}>
+                                    <div
+                                      style={{
+                                        height: '100%',
+                                        width: `${Math.min(Math.max(parseFloat(entry.secondJobActualProgress) || 0, 0), 100)}%`,
+                                        background: C.good,
+                                        borderRadius: 4,
+                                        transition: 'width 0.3s ease'
+                                      }}
+                                      title={`2. İş Fiili: %${entry.secondJobActualProgress ?? 0}`}
+                                    />
+                                  </div>
                                 </div>
 
+                                {/* Kıyaslama Özeti */}
                                 {entry.secondJobActualProgress != null && entry.secondJobActualProgress !== '' && j2LiveProg?.percent != null && (
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, fontSize: 10.5 }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 2, paddingTop: 6, borderTop: `1px dashed ${C.border}`, fontSize: 11 }}>
                                     {(() => {
                                       const diff = (parseFloat(entry.secondJobActualProgress) || 0) - j2LiveProg.percent;
                                       if (diff > 5) {
@@ -3350,7 +3413,9 @@ function App({ currentUser, onLogout }) {
                                         return <span style={{ color: C.line, fontWeight: 700 }}>🔵 Planla Uyumlu</span>;
                                       }
                                     })()}
-                                    <span style={{ color: C.dim, fontSize: 10 }}>Mavi: Teorik (%{j2LiveProg.percent}) | Yeşil: Fiili (%{entry.secondJobActualProgress})</span>
+                                    <span style={{ color: C.dim, fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>
+                                      Teorik: %{j2LiveProg.percent} ➔ Fiili: %{entry.secondJobActualProgress}
+                                    </span>
                                   </div>
                                 )}
                               </div>
