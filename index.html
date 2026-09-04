@@ -2821,8 +2821,8 @@ function App({ currentUser, onLogout }) {
             <div
               onClick={(e) => e.stopPropagation()}
               style={{
-                width: 520,
-                maxWidth: '92vw',
+                width: isMobile ? '100vw' : 520,
+                maxWidth: isMobile ? '100vw' : '92vw',
                 height: '100vh',
                 background: C.panel,
                 borderRight: `1px solid ${C.border}`,
@@ -2832,13 +2832,13 @@ function App({ currentUser, onLogout }) {
                 animation: 'slideInLeft 0.22s cubic-bezier(0.16, 1, 0.3, 1)'
               }}
             >
-              <div style={{ padding: '18px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: C.panelAlt }}>
+              <div style={{ padding: isMobile ? '14px 16px' : '18px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: C.panelAlt }}>
                 <div>
                   <div style={{ fontSize: 16, fontWeight: 800, color: C.paper, display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span>⚙️</span> İstasyon Tanımları & Sıralama
                   </div>
                   <div style={{ fontSize: 12, color: C.dim, marginTop: 3 }}>
-                    Mouse ile basılı tutup sürükleyerek sıralamayı belirleyin
+                    {isMobile ? 'Oklar veya sürükleyerek sıralamayı değiştirin' : 'Mouse ile basılı tutup sürükleyerek sıralamayı belirleyin'}
                   </div>
                 </div>
                 <button
@@ -2863,7 +2863,7 @@ function App({ currentUser, onLogout }) {
                 </button>
               </div>
 
-              <div style={{ padding: '10px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: C.panel }}>
+              <div style={{ padding: isMobile ? '10px 16px' : '10px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: C.panel }}>
                 <span style={{ fontSize: 12.5, color: C.dim, fontWeight: 600 }}>
                   Toplam {displayedStations.length} İstasyon
                 </span>
@@ -2884,7 +2884,7 @@ function App({ currentUser, onLogout }) {
                 </button>
               </div>
 
-              <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '12px 14px' : '14px 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {displayedStations.map((s, idx) => {
                   const isBeingDragged = draggedIndex === idx;
                   const isDragOver = dragOverIndex === idx;
@@ -2900,76 +2900,149 @@ function App({ currentUser, onLogout }) {
                       className="station-drag-row"
                       style={{
                         display: 'flex',
-                        alignItems: 'center',
-                        gap: 8,
+                        flexDirection: isMobile ? 'column' : 'row',
+                        alignItems: isMobile ? 'stretch' : 'center',
+                        gap: isMobile ? 8 : 8,
                         background: isDragOver ? (theme === 'light' ? '#E0F2FE' : '#1E293B') : (s.active === false ? (theme === 'light' ? '#F1F5F9' : '#0B0F17') : C.panelAlt),
                         border: isDragOver ? `2px dashed ${C.line}` : `1px solid ${C.border}`,
-                        borderRadius: 8,
-                        padding: '8px 10px',
+                        borderRadius: 10,
+                        padding: isMobile ? '10px 12px' : '8px 10px',
                         opacity: isBeingDragged ? 0.35 : (s.active === false ? 0.6 : 1),
                         transform: isDragOver ? 'scale(1.01)' : 'none',
                         boxShadow: isDragOver ? `0 0 12px ${C.line}44` : 'none',
                         transition: 'all 0.12s ease'
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.dim }}>
-                        <span style={{ fontSize: 16, lineHeight: 1, letterSpacing: -1, color: C.line, fontWeight: 800 }} title="Mouse ile basılı tutup yukarı/aşağı sürükleyin">
-                          ⠿
-                        </span>
-                        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, fontWeight: 800, color: C.dim, width: 20, textAlign: 'center' }}>
-                          {String(idx + 1).padStart(2, '0')}
-                        </span>
+                      {isMobile ? (
+                        <>
+                          {/* Mobilde 1. Satır: Sıra No, Oklar, Bölüm Rozeti ve İstasyon Adı */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                            <span style={{ fontSize: 16, lineHeight: 1, letterSpacing: -1, color: C.line, fontWeight: 800 }}>⠿</span>
+                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 800, color: C.line, background: `${C.line}15`, padding: '2px 6px', borderRadius: 4 }}>
+                              #{String(idx + 1).padStart(2, '0')}
+                            </span>
+                            <div style={{ display: 'flex', gap: 2 }}>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); moveStation(idx, -1); }}
+                                disabled={idx === 0}
+                                style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, color: idx === 0 ? C.dim : C.paper, cursor: idx === 0 ? 'default' : 'pointer', padding: '2px 6px', fontSize: 10, lineHeight: 1, opacity: idx === 0 ? 0.25 : 1 }}
+                                title="1 Yukarı Kaydır"
+                              >
+                                ▲
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); moveStation(idx, 1); }}
+                                disabled={idx === displayedStations.length - 1}
+                                style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 4, color: idx === displayedStations.length - 1 ? C.dim : C.paper, cursor: idx === displayedStations.length - 1 ? 'default' : 'pointer', padding: '2px 6px', fontSize: 10, lineHeight: 1, opacity: idx === displayedStations.length - 1 ? 0.25 : 1 }}
+                                title="1 Aşağı Kaydır"
+                              >
+                                ▼
+                              </button>
+                            </div>
+                            <GroupTag group={s.group} />
+                            <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: s.active === false ? C.dim : C.paper, wordBreak: 'break-word' }}>
+                              {s.name} {s.active === false && <span style={{ fontSize: 11, color: C.bad }}>(Pasif)</span>}
+                            </span>
+                          </div>
 
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginRight: 2 }}>
+                          {/* Mobilde 2. Satır: Standart Saat, Aktif/Pasif ve Silme Butonları */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: `1px dashed ${C.border}`, paddingTop: 6, marginTop: 2 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                              <span style={{ fontSize: 11.5, color: C.dim, fontWeight: 600 }}>Standart:</span>
+                              <input
+                                type="number" min="0" step="0.5" placeholder="a-s"
+                                className="num-input num-input-sm" style={{ width: 65, fontSize: 12.5, padding: '3px 6px' }}
+                                value={s.standardHours ?? ''}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => updateStationField(s.id, 'standardHours', e.target.value === '' ? null : parseFloat(e.target.value))}
+                                title="Standart adam-saat"
+                              />
+                              <span style={{ fontSize: 11.5, color: C.dim }}>a-s</span>
+                            </div>
+
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); toggleStationActive(s.id, s.active !== false); }}
+                                style={{ background: s.active === false ? C.dangerBadgeBg : C.successBadgeBg, border: `1px solid ${s.active === false ? C.dangerBadgeBorder : C.successBadgeBorder}`, color: s.active === false ? C.bad : C.good, cursor: 'pointer', padding: '4px 10px', fontSize: 11.5, fontWeight: 700, borderRadius: 6 }}
+                              >
+                                {s.active === false ? 'Pasif' : '✓ Aktif'}
+                              </button>
+
+                              <button
+                                onClick={(e) => { e.stopPropagation(); removeStation(s.id); }}
+                                style={{ background: C.panel, border: `1px solid ${C.border}`, color: C.bad, cursor: 'pointer', padding: '3px 8px', fontSize: 12, borderRadius: 6, fontWeight: 700 }}
+                                title="İstasyonu Tamamen Sil"
+                              >
+                                Sil
+                              </button>
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          {/* Masaüstü Tek Satır Görünüm */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: C.dim }}>
+                            <span style={{ fontSize: 16, lineHeight: 1, letterSpacing: -1, color: C.line, fontWeight: 800 }} title="Mouse ile basılı tutup yukarı/aşağı sürükleyin">
+                              ⠿
+                            </span>
+                            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, fontWeight: 800, color: C.dim, width: 20, textAlign: 'center' }}>
+                              {String(idx + 1).padStart(2, '0')}
+                            </span>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginRight: 2 }}>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); moveStation(idx, -1); }}
+                                disabled={idx === 0}
+                                style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 3, color: idx === 0 ? C.dim : C.paper, cursor: idx === 0 ? 'default' : 'pointer', padding: '1px 4px', fontSize: 8, lineHeight: 1, opacity: idx === 0 ? 0.25 : 1 }}
+                                title="1 Yukarı Kaydır"
+                              >
+                                ▲
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); moveStation(idx, 1); }}
+                                disabled={idx === displayedStations.length - 1}
+                                style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 3, color: idx === displayedStations.length - 1 ? C.dim : C.paper, cursor: idx === displayedStations.length - 1 ? 'default' : 'pointer', padding: '1px 4px', fontSize: 8, lineHeight: 1, opacity: idx === displayedStations.length - 1 ? 0.25 : 1 }}
+                                title="1 Aşağı Kaydır"
+                              >
+                                ▼
+                              </button>
+                            </div>
+                          </div>
+
+                          <GroupTag group={s.group} />
+                          <span style={{ flex: 1, minWidth: 140, fontSize: 13, fontWeight: 600, color: s.active === false ? C.dim : C.paper, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {s.name} {s.active === false && <span style={{ fontSize: 11, color: C.bad }}>(Pasif)</span>}
+                          </span>
+
+                          <input
+                            type="number" min="0" step="0.5" placeholder="a-s"
+                            className="num-input num-input-sm" style={{ width: 68, fontSize: 12.5, padding: '4px 6px' }}
+                            value={s.standardHours ?? ''}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => updateStationField(s.id, 'standardHours', e.target.value === '' ? null : parseFloat(e.target.value))}
+                            title="Standart adam-saat"
+                          />
+
                           <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); moveStation(idx, -1); }}
-                            disabled={idx === 0}
-                            style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 3, color: idx === 0 ? C.dim : C.paper, cursor: idx === 0 ? 'default' : 'pointer', padding: '1px 4px', fontSize: 8, lineHeight: 1, opacity: idx === 0 ? 0.25 : 1 }}
-                            title="1 Yukarı Kaydır"
+                            onClick={(e) => { e.stopPropagation(); toggleStationActive(s.id, s.active !== false); }}
+                            style={{ background: s.active === false ? C.dangerBadgeBg : C.successBadgeBg, border: `1px solid ${s.active === false ? C.dangerBadgeBorder : C.successBadgeBorder}`, color: s.active === false ? C.bad : C.good, cursor: 'pointer', padding: '4px 8px', fontSize: 11, fontWeight: 700, borderRadius: 5 }}
                           >
-                            ▲
+                            {s.active === false ? 'Pasif' : 'Aktif'}
                           </button>
+
                           <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); moveStation(idx, 1); }}
-                            disabled={idx === displayedStations.length - 1}
-                            style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 3, color: idx === displayedStations.length - 1 ? C.dim : C.paper, cursor: idx === displayedStations.length - 1 ? 'default' : 'pointer', padding: '1px 4px', fontSize: 8, lineHeight: 1, opacity: idx === displayedStations.length - 1 ? 0.25 : 1 }}
-                            title="1 Aşağı Kaydır"
+                            onClick={(e) => { e.stopPropagation(); removeStation(s.id); }}
+                            style={{ background: 'transparent', border: 'none', color: C.dim, cursor: 'pointer', padding: '0 4px', fontSize: 16 }}
+                            title="Tamamen Sil"
                           >
-                            ▼
+                            ×
                           </button>
-                        </div>
-                      </div>
-
-                      <GroupTag group={s.group} />
-                      <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: s.active === false ? C.dim : C.paper, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {s.name} {s.active === false && <span style={{ fontSize: 11, color: C.bad }}>(Pasif)</span>}
-                      </span>
-
-                      <input
-                        type="number" min="0" step="0.5" placeholder="a-s"
-                        className="num-input num-input-sm" style={{ width: 68, fontSize: 12.5, padding: '4px 6px' }}
-                        value={s.standardHours ?? ''}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => updateStationField(s.id, 'standardHours', e.target.value === '' ? null : parseFloat(e.target.value))}
-                        title="Standart adam-saat"
-                      />
-
-                      <button
-                        onClick={(e) => { e.stopPropagation(); toggleStationActive(s.id, s.active !== false); }}
-                        style={{ background: s.active === false ? C.dangerBadgeBg : C.successBadgeBg, border: `1px solid ${s.active === false ? C.dangerBadgeBorder : C.successBadgeBorder}`, color: s.active === false ? C.bad : C.good, cursor: 'pointer', padding: '4px 8px', fontSize: 11, fontWeight: 700, borderRadius: 5 }}
-                      >
-                        {s.active === false ? 'Pasif' : 'Aktif'}
-                      </button>
-
-                      <button
-                        onClick={(e) => { e.stopPropagation(); removeStation(s.id); }}
-                        style={{ background: 'transparent', border: 'none', color: C.dim, cursor: 'pointer', padding: '0 4px', fontSize: 16 }}
-                        title="Tamamen Sil"
-                      >
-                        ×
-                      </button>
+                        </>
+                      )}
                     </div>
                   );
                 })}
