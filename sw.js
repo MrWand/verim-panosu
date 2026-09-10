@@ -1,5 +1,5 @@
-// Service Worker for Epsilon Solentek Verim Panosu
-const CACHE_NAME = 'verim-panosu-v1';
+// Service Worker for Epsilon Solentek Verim Panosu - v2
+const CACHE_NAME = 'verim-panosu-v2';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -7,10 +7,11 @@ const ASSETS_TO_CACHE = [
 ];
 
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(ASSETS_TO_CACHE);
-    }).then(() => self.skipWaiting())
+    })
   );
 });
 
@@ -27,8 +28,6 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // CRITICAL: NEVER cache or intercept Firebase Firestore or Auth API requests
-  // Real-time synchronization requires direct network stream
   if (
     url.hostname.includes('firebaseio.com') ||
     url.hostname.includes('googleapis.com') ||
@@ -39,7 +38,6 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Network-First with Cache Fallback for app shell
   event.respondWith(
     fetch(event.request)
       .then((networkResponse) => {
@@ -53,12 +51,8 @@ self.addEventListener('fetch', (event) => {
       })
       .catch(() => {
         return caches.match(event.request).then((cachedResponse) => {
-          if (cachedResponse) {
-            return cachedResponse;
-          }
-          if (event.request.mode === 'navigate') {
-            return caches.match('./index.html');
-          }
+          if (cachedResponse) return cachedResponse;
+          if (event.request.mode === 'navigate') return caches.match('./index.html');
         });
       })
   );
