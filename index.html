@@ -89,6 +89,31 @@
     cursor: grabbing;
   }
 
+    /* AI Asistan Stilleri */
+  @keyframes aiPulse {
+    0%, 100% { transform: scale(1); opacity: 0.9; }
+    50% { transform: scale(1.08); opacity: 1; filter: drop-shadow(0 0 8px rgba(124, 58, 237, 0.6)); }
+  }
+  @keyframes aiMicWave {
+    0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+    70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+  }
+  @keyframes aiSlideUp {
+    from { transform: translateY(24px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  .ai-listening {
+    animation: aiMicWave 1.5s infinite !important;
+  }
+  .ai-quick-btn {
+    white-space: nowrap;
+    transition: all 0.15s ease;
+  }
+  .ai-quick-btn:hover {
+    transform: translateY(-1px);
+  }
+
   @keyframes slideInLeft {
     from { transform: translateX(-100%); }
     to { transform: translateX(0); }
@@ -1168,6 +1193,845 @@ function LoginScreen() {
   );
 }
 
+function parseInlineMarkdown(text) {
+  if (!text) return text;
+  const parts = [];
+  const regex = /(\*\*.*?\*\*|`.*?`)/g;
+  let lastIndex = 0;
+  let match;
+  let key = 0;
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.substring(lastIndex, match.index));
+    }
+    const token = match[0];
+    if (token.startsWith('**') && token.endsWith('**')) {
+      parts.push(<strong key={`b_${key++}`} style={{ fontWeight: 700 }}>{token.slice(2, -2)}</strong>);
+    } else if (token.startsWith('`') && token.endsWith('`')) {
+      parts.push(<code key={`c_${key++}`} style={{ background: 'rgba(0,0,0,0.08)', padding: '2px 5px', borderRadius: 4, fontFamily: 'JetBrains Mono, monospace', fontSize: '0.9em' }}>{token.slice(1, -1)}</code>);
+    }
+    lastIndex = regex.lastIndex;
+  }
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+  return parts.length > 0 ? parts : text;
+}
+
+function renderSimpleMarkdown(text) {
+  if (!text) return null;
+  const lines = text.split('\n');
+  return (
+    <div style={{ lineHeight: 1.6 }}>
+      {lines.map((line, idx) => {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          return <div key={idx} style={{ height: 8 }} />;
+        }
+        if (trimmed.startsWith('### ')) {
+          return <div key={idx} style={{ fontWeight: 800, fontSize: 15, marginTop: 10, marginBottom: 4, color: 'inherit' }}>{parseInlineMarkdown(trimmed.slice(4))}</div>;
+        }
+        if (trimmed.startsWith('## ')) {
+          return <div key={idx} style={{ fontWeight: 800, fontSize: 16, marginTop: 12, marginBottom: 6, color: 'inherit' }}>{parseInlineMarkdown(trimmed.slice(3))}</div>;
+        }
+        if (trimmed.startsWith('# ')) {
+          return <div key={idx} style={{ fontWeight: 800, fontSize: 17, marginTop: 14, marginBottom: 8, color: 'inherit' }}>{parseInlineMarkdown(trimmed.slice(2))}</div>;
+        }
+        if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+          return (
+            <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginLeft: 6, marginBottom: 4 }}>
+              <span style={{ color: '#0284C7', fontWeight: 800, marginTop: -1 }}>•</span>
+              <div style={{ flex: 1 }}>{parseInlineMarkdown(trimmed.slice(2))}</div>
+            </div>
+          );
+        }
+        const numMatch = trimmed.match(/^(\d+)\.\s+(.*)/);
+        if (numMatch) {
+          return (
+            <div key={idx} style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginLeft: 6, marginBottom: 4 }}>
+              <span style={{ fontWeight: 700, color: '#0284C7', minWidth: 16 }}>{numMatch[1]}.</span>
+              <div style={{ flex: 1 }}>{parseInlineMarkdown(numMatch[2])}</div>
+            </div>
+          );
+        }
+        return <div key={idx} style={{ marginBottom: 4 }}>{parseInlineMarkdown(line)}</div>;
+      })}
+    </div>
+  );
+}
+
+async function callGeminiAPI({ prompt, systemContext, apiKey, chatHistory = [] }) {
+  if (!apiKey || !apiKey.trim()) {
+    throw new Error('API_KEY_MISSING');
+  }
+
+  const filteredHistory = chatHistory
+    .filter((m, idx) => idx > 0 && (m.role === 'user' || m.role === 'assistant'))
+    .slice(-6);
+
+  const contents = [
+    ...filteredHistory.map(m => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.text }]
+    })),
+    {
+      role: 'user',
+      parts: [{ text: prompt }]
+    }
+  ];
+
+  const systemInstructionText = `Sen Epsilon Solentek Raylı Sistemler fabrikasının Yalın Üretim & İstasyon Planlama Yapay Zeka Uzmanısın (Epsilon AI Fabrika Asistanı).
+Fabrikamızda vagon imalatı (Montaj, Kaynak, Taşlama vb.) yapılmaktadır. Günlük mesai 07:30 - 16:55 arasındadır (Net 500 dakika).
+Sana canlı fabrika verileri JSON formatında verilmektedir:
+---
+${systemContext}
+---
+
+Yönergeler:
+1. Yanıtlarını her zaman Türkçe, profesyonel, net, somut ve doğrudan eyleme yönelik ver.
+2. İstasyon ve vagon isimlerini, saatleri ve sayısal oranları net belirt (örn: 'V-46 vagonu', 'İstasyon 3', '%85 verim').
+3. Vardiya özeti, risk analizi veya Kaizen önerileri istendiğinde maddeli, başlıklandırılmış ve yöneticiye/mühendise hitap eden şık bir format kullan.
+4. 16:55'e yetişemeyecek vagonlar için personel transferi (başka boş veya tamamlanmış istasyondan takviye) veya mesai öner.
+5. Sorulan soru dışındaki alakasız konulara girme, doğrudan amaca odaklan.`;
+
+  const requestBody = {
+    contents: contents,
+    systemInstruction: {
+      parts: [{ text: systemInstructionText }]
+    },
+    generationConfig: {
+      temperature: 0.35,
+      maxOutputTokens: 2048
+    }
+  };
+
+  const models = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+  let lastError = null;
+
+  for (const model of models) {
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey.trim()}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(requestBody)
+        }
+      );
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        const errMsg = errData.error?.message || `HTTP ${response.status}: ${response.statusText}`;
+        if (response.status === 400 || response.status === 403) {
+          throw new Error('API_KEY_INVALID: ' + errMsg);
+        }
+        if (response.status === 429) {
+          throw new Error('RATE_LIMIT: ' + errMsg);
+        }
+        throw new Error(errMsg);
+      }
+
+      const data = await response.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) {
+        throw new Error('Yapay zekadan yanıt alınamadı (Boş içerik).');
+      }
+      return text;
+    } catch (err) {
+      lastError = err;
+      if (err.message && err.message.startsWith('API_KEY_INVALID')) {
+        throw err;
+      }
+      console.warn(`Model ${model} hatası:`, err);
+    }
+  }
+
+  throw lastError || new Error('Gemini API ile bağlantı kurulamadı.');
+}
+
+function GeminiAIAssistantModal({
+  isOpen,
+  onClose,
+  C,
+  theme,
+  apiKey,
+  onSaveApiKey,
+  factoryContext,
+  chatMessages,
+  setChatMessages,
+  isMobile
+}) {
+  const [inputPrompt, setInputPrompt] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [showSettings, setShowSettings] = useState(!apiKey);
+  const [tempApiKey, setTempApiKey] = useState(apiKey || '');
+  const [syncCloud, setSyncCloud] = useState(true);
+  const [isListening, setIsListening] = useState(false);
+  const [copiedIndex, setCopiedIndex] = useState(null);
+  const [showKeyVisible, setShowKeyVisible] = useState(false);
+  const messagesEndRef = useRef(null);
+  const recognitionRef = useRef(null);
+
+  useEffect(() => {
+    setTempApiKey(apiKey || '');
+  }, [apiKey]);
+
+  useEffect(() => {
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatMessages, isLoading]);
+
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      try {
+        const reco = new SpeechRecognition();
+        reco.lang = 'tr-TR';
+        reco.continuous = false;
+        reco.interimResults = false;
+        reco.onstart = () => setIsListening(true);
+        reco.onresult = (e) => {
+          const text = e.results[0][0].transcript;
+          setInputPrompt(prev => (prev ? prev + ' ' + text : text));
+          setIsListening(false);
+        };
+        reco.onerror = () => setIsListening(false);
+        reco.onend = () => setIsListening(false);
+        recognitionRef.current = reco;
+      } catch (err) {
+        console.warn('SpeechRecognition başlatılamadı:', err);
+      }
+    }
+    return () => {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch (e) {}
+      }
+    };
+  }, []);
+
+  const toggleListening = () => {
+    if (!recognitionRef.current) {
+      alert('Tarayıcınız sesli komut özelliğini desteklemiyor. Lütfen Chrome tarayıcısı kullanın.');
+      return;
+    }
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    } else {
+      try {
+        recognitionRef.current.start();
+      } catch (e) {
+        setIsListening(false);
+      }
+    }
+  };
+
+  const handleSendMessage = async (textToSend) => {
+    const prompt = (textToSend || inputPrompt).trim();
+    if (!prompt || isLoading) return;
+
+    if (!apiKey) {
+      setShowSettings(true);
+      return;
+    }
+
+    const newMessages = [...chatMessages, { role: 'user', text: prompt }];
+    setChatMessages(newMessages);
+    setInputPrompt('');
+    setIsLoading(true);
+
+    try {
+      const systemContext = JSON.stringify(factoryContext, null, 2);
+      const reply = await callGeminiAPI({
+        prompt: prompt,
+        systemContext: systemContext,
+        apiKey: apiKey,
+        chatHistory: newMessages
+      });
+
+      setChatMessages([...newMessages, { role: 'assistant', text: reply }]);
+    } catch (err) {
+      let errorText = '⚠️ Bir hata oluştu: ' + (err.message || 'Bilinmeyen hata');
+      if (err.message && err.message.includes('API_KEY_INVALID')) {
+        errorText = '❌ **Google AI Studio API Anahtarı Geçersiz veya Yetkisiz.**\n\nLütfen yukarıdaki ⚙️ Ayarlar ikonuna tıklayarak geçerli bir API anahtarı girin.';
+        setShowSettings(true);
+      } else if (err.message && err.message.includes('API_KEY_MISSING')) {
+        errorText = '🔑 **API Anahtarı Eksik.** Lütfen Google AI Studio API anahtarınızı girin.';
+        setShowSettings(true);
+      } else if (err.message && err.message.includes('RATE_LIMIT')) {
+        errorText = '⏳ **API Kota Sınırı (Rate Limit).** Lütfen birkaç saniye bekleyip tekrar deneyin.';
+      }
+      setChatMessages([...newMessages, { role: 'assistant', text: errorText }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleQuickPrompt = (prompt) => {
+    handleSendMessage(prompt);
+  };
+
+  const handleSaveKey = () => {
+    if (!tempApiKey.trim()) {
+      alert('Lütfen geçerli bir API anahtarı girin.');
+      return;
+    }
+    onSaveApiKey(tempApiKey.trim(), syncCloud);
+    setShowSettings(false);
+  };
+
+  const handleCopy = (text, idx) => {
+    try {
+      navigator.clipboard.writeText(text);
+      setCopiedIndex(idx);
+      setTimeout(() => setCopiedIndex(null), 2000);
+    } catch (e) {
+      alert('Kopyalanamadı.');
+    }
+  };
+
+  const handleClearChat = () => {
+    if (window.confirm('Sohbet geçmişini sıfırlamak istiyor musunuz?')) {
+      setChatMessages([
+        {
+          role: 'assistant',
+          text: 'Sohbet temizlendi. İstasyonlar, vagonlar ve vardiya durumu hakkında ne öğrenmek istersiniz?'
+        }
+      ]);
+    }
+  };
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0, left: 0, right: 0, bottom: 0,
+      background: 'rgba(0, 0, 0, 0.55)',
+      backdropFilter: 'blur(4px)',
+      zIndex: 10000,
+      display: 'flex',
+      alignItems: isMobile ? 'flex-end' : 'center',
+      justifyContent: isMobile ? 'center' : 'flex-end',
+      padding: isMobile ? 0 : '0 24px 24px 0'
+    }}>
+      <div style={{
+        width: isMobile ? '100%' : '520px',
+        maxWidth: isMobile ? '100%' : '94vw',
+        height: isMobile ? '92vh' : '78vh',
+        maxHeight: isMobile ? '92vh' : '760px',
+        background: C.panel,
+        border: `1px solid ${C.border}`,
+        borderRadius: isMobile ? '20px 20px 0 0' : '16px',
+        boxShadow: '0 20px 50px rgba(0,0,0,0.35)',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        animation: 'aiSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1)'
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: '14px 18px',
+          borderBottom: `1px solid ${C.border}`,
+          background: theme === 'light' ? '#F8FAFC' : '#111C2E',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              width: 38,
+              height: 38,
+              borderRadius: 10,
+              background: 'linear-gradient(135deg, #0284C7 0%, #7C3AED 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 20,
+              color: '#FFF',
+              boxShadow: '0 2px 8px rgba(124, 58, 237, 0.35)'
+            }}>
+              ✨
+            </div>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 15, color: C.paper, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span>Epsilon AI Asistan</span>
+                <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 6, background: '#7C3AED22', color: '#7C3AED', fontWeight: 700 }}>
+                  Gemini 2.5
+                </span>
+              </div>
+              <div style={{ fontSize: 11.5, color: C.dim }}>
+                Canlı Fabrika & İstasyon Danışmanı
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button
+              onClick={handleClearChat}
+              style={{
+                background: 'transparent',
+                border: `1px solid ${C.border}`,
+                borderRadius: 8,
+                padding: '6px 9px',
+                color: C.dim,
+                fontSize: 13,
+                cursor: 'pointer'
+              }}
+              title="Sohbeti Temizle"
+            >
+              🗑️
+            </button>
+            <button
+              onClick={() => setShowSettings(!showSettings)}
+              style={{
+                background: showSettings ? `${C.line}22` : 'transparent',
+                border: `1px solid ${showSettings ? C.line : C.border}`,
+                borderRadius: 8,
+                padding: '6px 9px',
+                color: showSettings ? C.line : C.dim,
+                fontSize: 13,
+                cursor: 'pointer'
+              }}
+              title="API Anahtarı Ayarları"
+            >
+              ⚙️
+            </button>
+            <button
+              onClick={onClose}
+              style={{
+                background: 'transparent',
+                border: `1px solid ${C.border}`,
+                borderRadius: 8,
+                padding: '6px 11px',
+                color: C.dim,
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: 'pointer'
+              }}
+              title="Kapat"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {/* API Key Ayar Kartı */}
+        {showSettings && (
+          <div style={{
+            background: theme === 'light' ? '#F0F9FF' : '#0B1D2F',
+            borderBottom: `1px solid ${C.border}`,
+            padding: '14px 18px',
+            animation: 'aiSlideUp 0.2s ease'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: 13.5, color: C.paper, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>🔑 Google AI Studio API Anahtarı</span>
+                </div>
+                <div style={{ fontSize: 11.5, color: C.dim, marginTop: 2 }}>
+                  Gemini modellerini kullanmak için API anahtarınızı giriniz.
+                </div>
+              </div>
+              <a
+                href="https://aistudio.google.com/app/apikey"
+                target="_blank"
+                rel="noreferrer"
+                style={{
+                  fontSize: 11.5,
+                  fontWeight: 700,
+                  color: '#0284C7',
+                  textDecoration: 'none',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 3,
+                  padding: '4px 8px',
+                  background: '#0284C715',
+                  borderRadius: 6
+                }}
+              >
+                Ücretsiz Anahtar Al ↗
+              </a>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+              <div style={{ position: 'relative', flex: 1 }}>
+                <input
+                  type={showKeyVisible ? 'text' : 'password'}
+                  value={tempApiKey}
+                  onChange={(e) => setTempApiKey(e.target.value)}
+                  placeholder="AIzaSy..."
+                  className="num-input"
+                  style={{ textAlign: 'left', paddingRight: 34, fontSize: 13 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKeyVisible(!showKeyVisible)}
+                  style={{
+                    position: 'absolute',
+                    right: 6,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    opacity: 0.7
+                  }}
+                  title={showKeyVisible ? 'Gizle' : 'Göster'}
+                >
+                  {showKeyVisible ? '👁️' : '🙈'}
+                </button>
+              </div>
+              <button
+                onClick={handleSaveKey}
+                style={{
+                  background: 'linear-gradient(135deg, #0284C7, #0369A1)',
+                  color: '#FFF',
+                  border: 'none',
+                  borderRadius: 8,
+                  padding: '0 16px',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                Kaydet
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: C.dim, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={syncCloud}
+                  onChange={(e) => setSyncCloud(e.target.checked)}
+                  style={{ cursor: 'pointer' }}
+                />
+                <span>Diğer cihazlar için de kaydet (Firebase Senkronu)</span>
+              </label>
+              {apiKey && (
+                <button
+                  onClick={() => { onSaveApiKey('', true); setTempApiKey(''); }}
+                  style={{ background: 'transparent', border: 'none', color: C.bad, fontSize: 11.5, cursor: 'pointer', textDecoration: 'underline' }}
+                >
+                  Anahtarı Kaldır
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Hazır Eylem Butonları (Pills) */}
+        <div style={{
+          padding: '10px 14px',
+          borderBottom: `1px solid ${C.border}`,
+          background: theme === 'light' ? '#FFFFFF' : '#0F172A',
+          display: 'flex',
+          gap: 7,
+          overflowX: 'auto'
+        }} className="hide-scrollbar">
+          <button
+            className="ai-quick-btn"
+            disabled={isLoading}
+            onClick={() => handleQuickPrompt("Bugünkü istasyonların çalışma durumu, vagon ilerlemeleri, duruşlar ve genel verimlilik hakkında üst yönetim için kapsamlı bir Vardiya Özeti (Executive Briefing) hazırla.")}
+            style={{
+              padding: '6px 11px',
+              fontSize: 12,
+              fontWeight: 700,
+              borderRadius: 20,
+              background: theme === 'light' ? '#F1F5F9' : '#1E293B',
+              border: `1px solid ${C.border}`,
+              color: C.paper,
+              cursor: isLoading ? 'default' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5
+            }}
+          >
+            <span>📊</span> Vardiya Özeti
+          </button>
+
+          <button
+            className="ai-quick-btn"
+            disabled={isLoading}
+            onClick={() => handleQuickPrompt("Şu an 16:55 vardiya bitimine kadar tamamlanamayacak riskli vagonlar ve darboğazdaki istasyonlar hangileridir? Hangi istasyonlardan personel kaydırarak veya takviye yaparak bu gecikmeler önlenebilir?")}
+            style={{
+              padding: '6px 11px',
+              fontSize: 12,
+              fontWeight: 700,
+              borderRadius: 20,
+              background: theme === 'light' ? '#FFFBEB' : 'rgba(245, 158, 11, 0.15)',
+              border: `1px solid ${theme === 'light' ? '#FDE68A' : 'rgba(245, 158, 11, 0.35)'}`,
+              color: theme === 'light' ? '#B45309' : '#FCD34D',
+              cursor: isLoading ? 'default' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5
+            }}
+          >
+            <span>⚠️</span> Darboğaz & Riskler
+          </button>
+
+          <button
+            className="ai-quick-btn"
+            disabled={isLoading}
+            onClick={() => handleQuickPrompt("Fabrikadaki tüm aktif vagonların (örn. V-46 vb.) şu an hangi istasyonlarda olduğunu, harcanan adam-saatleri ve tahmini bitiş durumlarını özetleyen bir Vagon Durum Raporu ver.")}
+            style={{
+              padding: '6px 11px',
+              fontSize: 12,
+              fontWeight: 700,
+              borderRadius: 20,
+              background: theme === 'light' ? '#F0F9FF' : 'rgba(2, 132, 199, 0.15)',
+              border: `1px solid ${theme === 'light' ? '#BAE6FD' : 'rgba(2, 132, 199, 0.35)'}`,
+              color: theme === 'light' ? '#0369A1' : '#7DD3FC',
+              cursor: isLoading ? 'default' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5
+            }}
+          >
+            <span>🚆</span> Vagon Raporu
+          </button>
+
+          <button
+            className="ai-quick-btn"
+            disabled={isLoading}
+            onClick={() => handleQuickPrompt("Bugün veya bu hafta kaydedilen duruş nedenlerini (vinç, malzeme eksikliği, arıza vb.) ve verim kayıplarını analiz ederek, kayıpları azaltacak Yalın Üretim (Kaizen) aksiyon önerileri sun.")}
+            style={{
+              padding: '6px 11px',
+              fontSize: 12,
+              fontWeight: 700,
+              borderRadius: 20,
+              background: theme === 'light' ? '#FAF5FF' : 'rgba(124, 58, 237, 0.15)',
+              border: `1px solid ${theme === 'light' ? '#E9D5FF' : 'rgba(124, 58, 237, 0.35)'}`,
+              color: theme === 'light' ? '#7E22CE' : '#D8B4FE',
+              cursor: isLoading ? 'default' : 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5
+            }}
+          >
+            <span>💡</span> Kaizen & Duruş
+          </button>
+        </div>
+
+        {/* Mesaj Akışı */}
+        <div style={{
+          flex: 1,
+          overflowY: 'auto',
+          padding: '16px 18px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 14,
+          background: theme === 'light' ? '#F8FAFC' : '#0B1321'
+        }}>
+          {chatMessages.map((msg, idx) => {
+            const isUser = msg.role === 'user';
+            return (
+              <div
+                key={idx}
+                style={{
+                  display: 'flex',
+                  justifyContent: isUser ? 'flex-end' : 'flex-start',
+                  gap: 10,
+                  alignItems: 'flex-start'
+                }}
+              >
+                {!isUser && (
+                  <div style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 8,
+                    background: 'linear-gradient(135deg, #0284C7, #7C3AED)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 16,
+                    color: '#FFF',
+                    flexShrink: 0,
+                    marginTop: 2
+                  }}>
+                    ✨
+                  </div>
+                )}
+
+                <div style={{
+                  maxWidth: isUser ? '85%' : '88%',
+                  background: isUser ? 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)' : (theme === 'light' ? '#FFFFFF' : '#142033'),
+                  color: isUser ? '#FFFFFF' : C.paper,
+                  border: isUser ? 'none' : `1px solid ${C.border}`,
+                  borderRadius: isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                  padding: '12px 16px',
+                  fontSize: 13.5,
+                  boxShadow: C.cardShadow,
+                  position: 'relative'
+                }}>
+                  {isUser ? (
+                    <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontWeight: 500 }}>
+                      {msg.text}
+                    </div>
+                  ) : (
+                    <div>
+                      {renderSimpleMarkdown(msg.text)}
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8, gap: 6 }}>
+                        <button
+                          onClick={() => handleCopy(msg.text, idx)}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: C.dim,
+                            fontSize: 11.5,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            padding: '2px 6px',
+                            borderRadius: 4
+                          }}
+                          title="Cevabı panoya kopyala"
+                        >
+                          <span>{copiedIndex === idx ? '✓' : '📋'}</span>
+                          <span>{copiedIndex === idx ? 'Kopyalandı' : 'Kopyala'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          {isLoading && (
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <div style={{
+                width: 32,
+                height: 32,
+                borderRadius: 8,
+                background: 'linear-gradient(135deg, #0284C7, #7C3AED)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 16,
+                color: '#FFF',
+                flexShrink: 0
+              }}>
+                ✨
+              </div>
+              <div style={{
+                background: theme === 'light' ? '#FFFFFF' : '#142033',
+                border: `1px solid ${C.border}`,
+                borderRadius: '16px 16px 16px 4px',
+                padding: '12px 16px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                color: C.dim,
+                fontSize: 13,
+                boxShadow: C.cardShadow
+              }}>
+                <span style={{ display: 'inline-block', animation: 'aiPulse 1.2s infinite ease-in-out' }}>⚡</span>
+                <span>Fabrika verileri analiz ediliyor ve yanıt hazırlanıyor...</span>
+              </div>
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* Input Bar */}
+        <div style={{
+          padding: '12px 14px',
+          borderTop: `1px solid ${C.border}`,
+          background: theme === 'light' ? '#FFFFFF' : '#0F172A'
+        }}>
+          <form
+            onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }}
+            style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+          >
+            <button
+              type="button"
+              onClick={toggleListening}
+              className={isListening ? 'ai-listening' : ''}
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: 10,
+                border: `1px solid ${isListening ? '#EF4444' : C.border}`,
+                background: isListening ? '#FEE2E2' : (theme === 'light' ? '#F8FAFC' : '#1E293B'),
+                color: isListening ? '#DC2626' : C.paper,
+                fontSize: 18,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                transition: 'all 0.2s'
+              }}
+              title={isListening ? 'Dinleniyor... (Durdurmak için tıklayın)' : 'Sesli Sor (Mikrofon)'}
+            >
+              🎙️
+            </button>
+
+            <input
+              type="text"
+              value={inputPrompt}
+              onChange={(e) => setInputPrompt(e.target.value)}
+              placeholder={isListening ? 'Sizi dinliyor, konuşun...' : 'Fabrika, vagon veya istasyon hakkında soru sorun...'}
+              disabled={isLoading}
+              style={{
+                flex: 1,
+                padding: '11px 14px',
+                borderRadius: 10,
+                border: `1px solid ${C.border}`,
+                background: theme === 'light' ? '#F8FAFC' : '#0D141F',
+                color: C.paper,
+                fontSize: 13.5,
+                outline: 'none'
+              }}
+            />
+
+            <button
+              type="submit"
+              disabled={!inputPrompt.trim() || isLoading}
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: 10,
+                border: 'none',
+                background: (!inputPrompt.trim() || isLoading)
+                  ? (theme === 'light' ? '#E2E8F0' : '#1E293B')
+                  : 'linear-gradient(135deg, #0284C7 0%, #7C3AED 100%)',
+                color: (!inputPrompt.trim() || isLoading) ? C.dim : '#FFFFFF',
+                fontSize: 16,
+                fontWeight: 800,
+                cursor: (!inputPrompt.trim() || isLoading) ? 'default' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                boxShadow: (!inputPrompt.trim() || isLoading) ? 'none' : '0 2px 8px rgba(124, 58, 237, 0.3)'
+              }}
+              title="Gönder"
+            >
+              ➤
+            </button>
+          </form>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, fontSize: 11, color: C.dim }}>
+            <span>
+              {apiKey ? '🟢 Gemini API bağlı' : '⚠️ API Anahtarı girilmedi (Ayarlara tıklayın)'}
+            </span>
+            <span>Epsilon Solentek AI Fabrika Danışmanı</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App({ currentUser, onLogout }) {
   const { theme, toggleTheme, C } = useTheme();
   const [data, setData] = useState({ stations: [], entries: {}, settings: { allowancePercent: 10 } });
@@ -1201,6 +2065,37 @@ function App({ currentUser, onLogout }) {
   
   const [isMobileScreen, setIsMobileScreen] = useState(() => window.innerWidth <= 768);
   const [forceMobileMode, setForceMobileMode] = useState(null); // null: otomatik, true: mobil, false: masaüstü
+
+  // AI Asistan Durumu & Google AI Studio API Anahtarı
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [geminiApiKey, setGeminiApiKey] = useState(() => {
+    return localStorage.getItem('epsilon_gemini_api_key') || '';
+  });
+  const [aiChatMessages, setAiChatMessages] = useState([
+    {
+      role: 'assistant',
+      text: 'Merhaba! Ben **Epsilon Solentek AI Fabrika Asistanı**.\n\nİstasyonlar, vagon ilerlemeleri, 16:55 vardiya tamamlama riskleri ve arıza/duruş verileri hakkında sorularınızı yanıtlayabilir, üst yönetim için vardiya özeti hazırlayabilirim.\n\nAşağıdaki hazır butonlardan birine tıklayabilir veya doğrudan sorunuzu yazabilirsiniz!'
+    }
+  ]);
+
+  useEffect(() => {
+    if (data.settings?.geminiApiKey && !localStorage.getItem('epsilon_gemini_api_key')) {
+      setGeminiApiKey(data.settings.geminiApiKey);
+    }
+  }, [data.settings?.geminiApiKey]);
+
+  const saveApiKey = (key, syncToCloud = false) => {
+    const trimmed = (key || '').trim();
+    setGeminiApiKey(trimmed);
+    if (trimmed) {
+      localStorage.setItem('epsilon_gemini_api_key', trimmed);
+    } else {
+      localStorage.removeItem('epsilon_gemini_api_key');
+    }
+    if (syncToCloud) {
+      updateSettings('geminiApiKey', trimmed);
+    }
+  };
   const isMobile = forceMobileMode !== null ? forceMobileMode : isMobileScreen;
 
   const [mobileGroupFilter, setMobileGroupFilter] = useState('all');
@@ -2291,6 +3186,91 @@ function App({ currentUser, onLogout }) {
     return data.stations.filter((s) => showInactiveStations || s.active !== false);
   }, [data.stations, showInactiveStations]);
 
+  const buildFactoryAIContext = useCallback(() => {
+    const timeStr = `${String(currentWallTime.getHours()).padStart(2, '0')}:${String(currentWallTime.getMinutes()).padStart(2, '0')}`;
+    const dateStr = `${selectedDate.getDate()} ${MONTHS[selectedDate.getMonth()]} ${selectedDate.getFullYear()} (${DAY_NAMES[dayIndex]})`;
+    
+    // Aktif istasyonların günlük anlık durumu
+    const activeStationsList = displayedStations.map(s => {
+      const e = data.entries[`${selectedKey}|${s.id}`] || {};
+      const cInfo = carryoverMap[s.id]?.[dayIndex];
+      const timeline = getStationStaffTimeline(selectedKey, s.id, data.stations, data.entries);
+      const currentStaffNow = getStaffAtMinute(nowMin, timeline.baseStaff, timeline.events);
+      
+      const w1 = (e.wagonNo || cInfo?.job1WagonNo || '').trim();
+      const w1Status = e.job1Status === 'in_progress' ? 'Devam Ediyor' : (e.actualEndTime ? 'Tamamlandı' : 'Bekliyor/Başlanmadı');
+      const w1Progress = e.actualProgress != null ? e.actualProgress : 0;
+      
+      const std1 = cInfo?.isCarryover ? cInfo.job1Standard : s.standardHours;
+      const startMin1 = timeToMin(e.startTime) ?? SHIFT_START_MIN;
+      const est1 = estimateDynamicFinishTime(startMin1, std1, timeline.baseStaff, timeline.events, e.overtimeDecision, dayIndex);
+      const finishMin1 = est1 ? est1.finishMin : (timeToMin(e.actualEndTime) || SHIFT_END_MIN);
+      const isOvertimeRisk = !e.actualEndTime && finishMin1 > SHIFT_END_MIN;
+
+      return {
+        id: s.id,
+        name: s.name,
+        group: s.group,
+        baseStaff: timeline.baseStaff,
+        currentStaffNow: currentStaffNow,
+        isIdle: !!e.isIdle,
+        idleReason: e.idleReason || null,
+        downtimeReason: e.downtimeReason ? (DOWNTIME_REASONS.find(r => r.id === e.downtimeReason)?.label || e.downtimeReason) : null,
+        job1: w1 ? {
+          wagonNo: w1,
+          status: w1Status,
+          progressPercent: w1Progress,
+          startTime: minToTime(startMin1),
+          actualEndTime: e.actualEndTime || null,
+          estimatedFinishTime: minToTime(finishMin1),
+          isOvertimeRisk: isOvertimeRisk,
+          overtimeMinutes: isOvertimeRisk ? (finishMin1 - SHIFT_END_MIN) : 0
+        } : null,
+        job2: e.hasSecondJob ? {
+          wagonNo: e.secondJobWagonNo || 'İsimsiz',
+          status: e.secondJobStatus === 'in_progress' ? 'Devam Ediyor' : (e.secondJobActualEndTime ? 'Tamamlandı' : 'Bekliyor'),
+          progressPercent: e.secondJobActualProgress != null ? e.secondJobActualProgress : 0
+        } : null,
+        staffTransfers: (e.staffShifts || []).map(sh => ({
+          time: sh.time,
+          count: sh.transferredCount,
+          targetStation: data.stations.find(st => st.id === sh.targetStationId)?.name || 'Bilinmeyen İstasyon'
+        }))
+      };
+    });
+
+    // Fabrikadaki tüm vagonların durumu
+    const wagonsOverview = (wagonsCatalog || []).map(w => ({
+      wagonNo: w.wagonNo,
+      latestStatus: w.latestStatus,
+      totalActualHours: Math.round(w.totalActual * 10) / 10,
+      totalStandardHours: Math.round(w.totalStandard * 10) / 10,
+      stepsCount: w.steps?.length || 0,
+      currentStations: (w.steps || []).filter(st => st.statusText === 'Devam Ediyor').map(st => st.stationName)
+    }));
+
+    // En çok karşılaşılan duruşlar
+    const topDowntimes = (downtimeSummary?.list || []).slice(0, 5).map(d => ({
+      reason: d.label,
+      hours: Math.round(d.hours * 10) / 10,
+      percent: Math.round(d.percent),
+      affectedStations: d.stationsList
+    }));
+
+    return {
+      currentDateTime: `${dateStr}, Saat: ${timeStr}`,
+      shiftInfo: 'Mesai: 07:30 - 16:55 (Net 500 dakika)',
+      totalActiveStations: activeStationsList.length,
+      idleStationsCount: activeStationsList.filter(s => s.isIdle).length,
+      delayedWagonsCount: activeStationsList.filter(s => s.job1?.isOvertimeRisk).length,
+      weekEfficiencyAverage: weekAvg !== null ? `%${Math.round(weekAvg)}` : 'Hesaplanmadı',
+      stations: activeStationsList,
+      wagons: wagonsOverview,
+      topDowntimes: topDowntimes,
+      absenteeismTotal: absenteeismTotal
+    };
+  }, [selectedDate, selectedKey, nowMin, currentWallTime, displayedStations, data.entries, data.stations, carryoverMap, dayIndex, wagonsCatalog, downtimeSummary, weekAvg, absenteeismTotal]);
+
   return (
     <div style={{ minHeight: '100vh', padding: isMobile ? '12px 12px 90px' : '24px 20px 64px' }}>
       <div style={{ maxWidth: 1180, margin: '0 auto' }}>
@@ -2402,6 +3382,25 @@ function App({ currentUser, onLogout }) {
                   title="Masaüstü Pano Görünümüne Geç"
                 >
                   💻 Pano
+                </button>
+                <button
+                  onClick={() => setIsAiModalOpen(true)}
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(2, 132, 199, 0.2) 0%, rgba(124, 58, 237, 0.25) 100%)',
+                    border: '1px solid rgba(124, 58, 237, 0.45)',
+                    borderRadius: 8,
+                    padding: '6px 11px',
+                    color: theme === 'light' ? '#6D28D9' : '#DDD6FE',
+                    fontSize: 12,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5
+                  }}
+                  title="Epsilon AI Fabrika Asistanı"
+                >
+                  <span>✨</span> AI
                 </button>
                 <button
                   onClick={toggleTheme}
@@ -2621,6 +3620,27 @@ function App({ currentUser, onLogout }) {
             >
               <span style={{ fontSize: 15 }}>🛠️</span> Haftasonu
             </button>
+            <button 
+              onClick={() => setIsAiModalOpen(true)} 
+              style={{
+                background: 'linear-gradient(135deg, rgba(2, 132, 199, 0.15) 0%, rgba(124, 58, 237, 0.2) 100%)',
+                border: '1px solid rgba(124, 58, 237, 0.4)',
+                borderRadius: 8,
+                color: theme === 'light' ? '#6D28D9' : '#C4B5FD',
+                padding: '7px 14px',
+                fontSize: 13,
+                fontWeight: 800,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                boxShadow: C.cardShadow
+              }}
+              title="Gemini Destekli AI Fabrika Asistanını Aç"
+            >
+              <span style={{ fontSize: 16 }}>✨</span> AI Asistan
+            </button>
+
             <button 
               onClick={() => setIsStationDrawerOpen(true)} 
               style={{
@@ -5171,6 +6191,26 @@ function App({ currentUser, onLogout }) {
               </button>
 
               <button
+                onClick={() => setIsAiModalOpen(true)}
+                style={{
+                  flex: 1,
+                  background: 'transparent',
+                  border: 'none',
+                  padding: '6px 4px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 3,
+                  cursor: 'pointer',
+                  color: isAiModalOpen ? '#7C3AED' : C.dim
+                }}
+                className="mobile-pill-btn"
+              >
+                <span style={{ fontSize: 20 }}>✨</span>
+                <span style={{ fontSize: 11, fontWeight: isAiModalOpen ? 800 : 600 }}>AI Danışman</span>
+              </button>
+
+              <button
                 onClick={() => setIsStationDrawerOpen(true)}
                 style={{
                   flex: 1,
@@ -5191,6 +6231,54 @@ function App({ currentUser, onLogout }) {
               </button>
             </div>
           </div>
+        )}
+
+        {/* Masaüstü Sağ Alt Sabit AI Butonu (FAB) */}
+        {!isMobile && (
+          <button
+            onClick={() => setIsAiModalOpen(true)}
+            style={{
+              position: 'fixed',
+              bottom: 24,
+              right: 24,
+              zIndex: 999,
+              background: 'linear-gradient(135deg, #0284C7 0%, #7C3AED 100%)',
+              color: '#FFFFFF',
+              border: 'none',
+              borderRadius: 9999,
+              padding: '12px 20px',
+              fontSize: 14,
+              fontWeight: 800,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 9,
+              cursor: 'pointer',
+              boxShadow: '0 8px 24px rgba(124, 58, 237, 0.35), 0 2px 6px rgba(0,0,0,0.15)',
+              transition: 'transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s'
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-2px) scale(1.03)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0) scale(1)'; }}
+            title="Epsilon AI Fabrika Asistanı"
+          >
+            <span style={{ fontSize: 18 }}>✨</span>
+            <span>Epsilon AI Asistan</span>
+          </button>
+        )}
+
+        {/* Gemini AI Fabrika Asistanı Modal */}
+        {isAiModalOpen && (
+          <GeminiAIAssistantModal
+            isOpen={isAiModalOpen}
+            onClose={() => setIsAiModalOpen(false)}
+            C={C}
+            theme={theme}
+            apiKey={geminiApiKey}
+            onSaveApiKey={saveApiKey}
+            factoryContext={buildFactoryAIContext()}
+            chatMessages={aiChatMessages}
+            setChatMessages={setAiChatMessages}
+            isMobile={isMobile}
+          />
         )}
       </div>
     </div>
